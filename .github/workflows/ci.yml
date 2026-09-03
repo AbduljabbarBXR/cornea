@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy (warnings as errors)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Run tests (incl. determinism)
+        run: cargo test --release
+
+      - name: Smoke-test the CLI fixture
+        run: |
+          ./target/release/cornea tests/fixtures/sample-bugs.html 360 > /tmp/sample-report.json
+          python3 -c "
+import json,sys
+r=json.load(open('/tmp/sample-report.json'))['report']
+assert r['overflows'], 'expected overflow'
+assert r['quality']['score'] < 1.0, 'sample has known issues'
+print(f'OK: {r[\"total_elements\"]} elements, quality={round(r[\"quality\"][\"score\"],2)}')
+"
