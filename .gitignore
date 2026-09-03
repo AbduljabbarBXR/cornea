@@ -1,0 +1,11 @@
+# Build artifacts
+target/
+*.rs.bk
+
+# Local index / state
+.heides/
+.heides.db
+
+# Misc
+*.log
+.DS_Store
