@@ -1,0 +1,20 @@
+[package]
+name = "cornea"
+version = "0.1.0"
+edition = "2024"
+description = "Deterministic visual inspection engine + MCP server for AI agents"
+
+[[bin]]
+name = "cornea"
+path = "src/main.rs"
+
+[dependencies]
+html5ever = "0.27.0"
+markup5ever_rcdom = "0.3.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
