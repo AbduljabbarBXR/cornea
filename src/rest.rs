@@ -156,10 +156,10 @@ pub fn run(
         }
         "pageview" => {
             let mut v = crate::report::page_view(&calc_html, width, height);
-            if let Some(stats) = v.get_mut("stats") {
-                if let Some(obj) = stats.as_object_mut() {
-                    obj.insert("warnings".into(), json!(report.warnings));
-                }
+            if let Some(stats) = v.get_mut("stats")
+                && let Some(obj) = stats.as_object_mut()
+            {
+                obj.insert("warnings".into(), json!(report.warnings));
             }
             v
         }

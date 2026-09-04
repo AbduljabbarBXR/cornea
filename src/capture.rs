@@ -124,7 +124,6 @@ mod tests {
     use super::*;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
-    use std::process::Command;
 
     /// A fake "chrome" whose --dump-dom prints a fixed rendered DOM.
     fn fake_browser() -> String {

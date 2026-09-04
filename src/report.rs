@@ -176,18 +176,19 @@ fn walk_semantics(
         .map(|c| c.to_ascii_lowercase().contains("hero"))
         .unwrap_or(false);
 
-    if is_semantic {
-        if let Some((bbox, visible)) = boxes.get(&el.id).copied() {
-            if visible && bbox.w > 0.0 && bbox.h > 0.0 {
-                sections.push(json!({
-                    "kind": el.tag,
-                    "selector": selector_of(el),
-                    "box": box_json(bbox),
-                    "text": text.chars().take(140).collect::<String>(),
-                    "children": el.children.len(),
-                }));
-            }
-        }
+    if is_semantic
+        && let Some((bbox, visible)) = boxes.get(&el.id).copied()
+        && visible
+        && bbox.w > 0.0
+        && bbox.h > 0.0
+    {
+        sections.push(json!({
+            "kind": el.tag,
+            "selector": selector_of(el),
+            "box": box_json(bbox),
+            "text": text.chars().take(140).collect::<String>(),
+            "children": el.children.len(),
+        }));
     }
 
     // hero: an explicit class wins, else the first large top block
@@ -204,11 +205,9 @@ fn walk_semantics(
         if is_hero_named && boxes.get(&el.id).map(|(_, v)| *v).unwrap_or(false) {
             *hero = Some(hero_entry(el, bbox_of(boxes, el.id), text.clone()));
             collect_ids(el, hero_ids);
-        } else if geometric {
-            if let Some((bbox, _)) = boxes.get(&el.id) {
-                *hero = Some(hero_entry(el, *bbox, text.clone()));
-                collect_ids(el, hero_ids);
-            }
+        } else if geometric && let Some((bbox, _)) = boxes.get(&el.id) {
+            *hero = Some(hero_entry(el, *bbox, text.clone()));
+            collect_ids(el, hero_ids);
         }
     }
 

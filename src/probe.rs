@@ -57,15 +57,15 @@ pub fn detect() -> Vec<Browser> {
     #[cfg(target_os = "windows")]
     {
         if let Ok(pf) = std::env::var("ProgramFiles") {
-            dirs.push(PathBuf::from(pf).join("Google/Chrome/Application"));
-            dirs.push(PathBuf::from(pf).join("Microsoft/Edge/Application"));
-            dirs.push(PathBuf::from(pf).join("Mozilla Firefox"));
-            dirs.push(PathBuf::from(pf).join("BraveSoftware/Brave-Browser/Application"));
+            dirs.push(PathBuf::from(&pf).join("Google/Chrome/Application"));
+            dirs.push(PathBuf::from(&pf).join("Microsoft/Edge/Application"));
+            dirs.push(PathBuf::from(&pf).join("Mozilla Firefox"));
+            dirs.push(PathBuf::from(&pf).join("BraveSoftware/Brave-Browser/Application"));
         }
         if let Ok(pf) = std::env::var("ProgramFiles(x86)") {
-            dirs.push(PathBuf::from(pf).join("Google/Chrome/Application"));
-            dirs.push(PathBuf::from(pf).join("Microsoft/Edge/Application"));
-            dirs.push(PathBuf::from(pf).join("Mozilla Firefox"));
+            dirs.push(PathBuf::from(&pf).join("Google/Chrome/Application"));
+            dirs.push(PathBuf::from(&pf).join("Microsoft/Edge/Application"));
+            dirs.push(PathBuf::from(&pf).join("Mozilla Firefox"));
         }
     }
 
@@ -231,7 +231,7 @@ mod tests {
                 std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
             }
         }
-        let found = detect_from_dirs(&[dir.clone()]);
+        let found = detect_from_dirs(std::slice::from_ref(&dir));
         let names: Vec<&str> = found.iter().map(|b| b.name.as_str()).collect();
         assert!(
             names.contains(&"google-chrome"),

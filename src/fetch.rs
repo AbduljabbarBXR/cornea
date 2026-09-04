@@ -33,7 +33,7 @@ const MAX_ASSETS: usize = 24;
 /// helper below stay transport agnostic.
 enum Transport {
     Plain(TcpStream),
-    Tls(rustls::StreamOwned<rustls::ClientConnection, TcpStream>),
+    Tls(Box<rustls::StreamOwned<rustls::ClientConnection, TcpStream>>),
 }
 
 impl Read for Transport {
@@ -165,7 +165,9 @@ fn connect_transport(target: &Target) -> Result<Transport, String> {
         .map_err(|_| format!("invalid TLS hostname: {}", target.host))?;
     let conn =
         rustls::ClientConnection::new(config, name).map_err(|e| format!("tls setup: {}", e))?;
-    Ok(Transport::Tls(rustls::StreamOwned::new(conn, tcp)))
+    Ok(Transport::Tls(Box::new(rustls::StreamOwned::new(
+        conn, tcp,
+    ))))
 }
 
 fn http_get(url: &str, cap: usize) -> Result<String, String> {
