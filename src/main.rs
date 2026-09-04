@@ -43,7 +43,7 @@ fn main() {
 
     if args.len() < 2 {
         eprintln!(
-            "usage: cornea <file.html> [viewport_width] | --serve | --serve-http [addr] | --version"
+            "usage: cornea <file.html> [viewport_width] [--js] | --serve | --serve-http [addr] | --version"
         );
         std::process::exit(2);
     }
@@ -53,6 +53,7 @@ fn main() {
         .get(2)
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(layout::DEFAULT_WIDTH);
+    let run_js = args.iter().any(|a| a == "--js");
 
     let html = match std::fs::read_to_string(path) {
         Ok(h) => h,
@@ -62,7 +63,14 @@ fn main() {
         }
     };
 
-    let (_model, report) = analyze(&html, viewport_w);
+    let (calc_html, js_notes) = if run_js {
+        cornea::js::execute_checked(&html)
+    } else {
+        (html.clone(), Vec::new())
+    };
+
+    let (_model, mut report) = analyze(&calc_html, viewport_w);
+    report.js_notes = js_notes;
 
     // token estimate measured on the report only (the part an agent consumes)
     let report_json = serde_json::to_string(&report).unwrap();
@@ -206,7 +214,8 @@ impl McpServer {
             "layout.quality" => "quality",
             _ => "",
         };
-        let req = serde_json::json!({ "html": html, "width": width }).to_string();
+        let js = args.get("js").and_then(|j| j.as_bool()).unwrap_or(false);
+        let req = serde_json::json!({ "html": html, "width": width, "js": js }).to_string();
         let (status, payload) = rest::dispatch(endpoint, &req);
         if endpoint.is_empty() || status >= 400 {
             return json!({ "content": [ text_content(format!("error: {}", payload)) ], "isError": true });
@@ -220,7 +229,8 @@ fn tool_def(name: &str, description: &str) -> serde_json::Value {
         "type": "object",
         "properties": {
             "html": { "type": "string", "description": "The HTML source of the page to inspect" },
-            "width": { "type": "number", "description": "Viewport width in px (default 360)" }
+            "width": { "type": "number", "description": "Viewport width in px (default 360)" },
+            "js": { "type": "boolean", "description": "Execute inline scripts first (Phase A: minimal DOM shim)" }
         },
         "required": ["html"]
     });

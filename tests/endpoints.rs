@@ -132,3 +132,50 @@ fn mcp_tool_call_detects_overlap() {
         "expected an overlap via MCP"
     );
 }
+
+#[test]
+fn cli_js_flag_runs_inline_script_and_detects_built_overlap() {
+    // A page whose only content is built by inline JS (two overlapping absolute
+    // boxes). Without --js there is nothing to overlap; with --js the engine
+    // must detect the collision the script creates.
+    let js_html = "<!DOCTYPE html><html><body><script>\
+        var a=document.createElement('div');a.style.position='absolute';a.style.left='0px';a.style.top='0px';a.style.width='200px';a.style.height='100px';a.textContent='A';document.body.appendChild(a);\
+        var b=document.createElement('div');b.style.position='absolute';b.style.left='120px';b.style.top='50px';b.style.width='200px';b.style.height='100px';b.textContent='B';document.body.appendChild(b);\
+        </script></body></html>";
+
+    let dir = std::env::temp_dir();
+    let path = dir.join("cornea_js_endtoend.html");
+    std::fs::write(&path, js_html).expect("write temp js page");
+
+    let off = bin()
+        .arg(&path)
+        .arg("360")
+        .output()
+        .expect("run CLI without --js");
+    assert!(off.status.success());
+    let off_report: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(off.stdout).unwrap()).unwrap();
+    let off_overlaps = off_report["report"]["overlaps"].as_array().unwrap().len();
+
+    let on = bin()
+        .arg(&path)
+        .arg("360")
+        .arg("--js")
+        .output()
+        .expect("run CLI with --js");
+    assert!(on.status.success());
+    let on_report: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(on.stdout).unwrap()).unwrap();
+    let on_overlaps = on_report["report"]["overlaps"].as_array().unwrap().len();
+
+    assert_eq!(
+        off_overlaps, 0,
+        "without --js the script-built boxes do not exist"
+    );
+    assert_eq!(
+        on_overlaps, 1,
+        "with --js the two absolute boxes the script builds must overlap"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
