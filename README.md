@@ -1,10 +1,10 @@
-# Cornea 👁️
+# Cornea 
 
-**Deterministic visual inspection for AI agents — the eyes a coding agent never had.**
+**Deterministic visual inspection for AI agents. The eyes a coding agent never had.**
 
-Cornea gives a coding agent that builds web pages a real way to *see* them — as a **token-cheap, deterministic structural model** it can reason over exactly, instead of megabytes of screenshots and raw DOM dumped into context.
+Cornea gives a coding agent that builds web pages a real way to *see* them. As a **token-cheap, deterministic structural model** it can reason over exactly, instead of megabytes of screenshots and raw DOM dumped into context.
 
-An agent doesn't need a *photo* of a page. It needs to know **is my layout broken, and how.** Cornea computes an abstract *visual geometry model* of every element (box, position, z-order, computed styles) and derives inspection conclusions — **overlap, overflow, contrast, quality** — then exposes them as native tools on **three surfaces**: CLI, MCP, and HTTP API.
+An agent doesn't need a *photo* of a page. It needs to know **is my layout broken, and how.** Cornea computes an abstract *visual geometry model* of every element (box, position, z-order, computed styles) and derives inspection conclusions. **overlap, overflow, contrast, quality**. Then exposes them as native tools on **three surfaces**: CLI, MCP, and HTTP API.
 
 > One promise holds everything together: **same input → byte-identical output.** No Chromium, no sub-pixel variance, no server. A single ~1.4 MB binary.
 
@@ -16,17 +16,17 @@ An agent doesn't need a *photo* of a page. It needs to know **is my layout broke
 # Build (Rust 1.98+, edition 2024)
 cargo build --release
 
-# Inspect a file — the simplest way to use Cornea
+# Inspect a file, the simplest way to use Cornea
 ./target/release/cornea tests/fixtures/sample-bugs.html 360
 ```
 
-> Requires only `cargo` — no browser, no Node, no system dependencies. Builds fine on a phone-class device.
+> Requires only `cargo`. No browser, no Node, no system dependencies. Builds fine on a phone-class device.
 
 ---
 
 ## Visual guide: what Cornea does
 
-Take this page below. It looks fine as source — but it's hiding four layout bugs. Cornea finds every one.
+Take this page below. It looks fine as source. But it's hiding four layout bugs. Cornea finds every one.
 
 ```html
 <!-- tests/fixtures/sample-bugs.html (excerpt) -->
@@ -64,10 +64,10 @@ Each finding is precise and actionable:
 
 | Finding | Detail |
 |--------|--------|
-| **Overlap** | `section.row ⇄ div.overlap-right`, area 20000 px² — the absolutely-positioned boxes cover the cards |
+| **Overlap** | `section.row ⇄ div.overlap-right`, area 20000 px². The absolutely-positioned boxes cover the cards |
 | **Overflow** | `div.overflow-bad`: right edge `600` exceeds viewport `360` → clipped |
-| **Contrast** | black on `blue`: ratio `2.44:1` — fails WCAG AA (needs 4.5) |
-| **Contrast** | `#cccccc` on white: ratio `1.61:1` — fails WCAG AA |
+| **Contrast** | black on `blue`: ratio `2.44:1`. Fails WCAG AA (needs 4.5) |
+| **Contrast** | `#cccccc` on white: ratio `1.61:1`. Fails WCAG AA |
 
 That is the value: **hundreds of tokens, not hundreds of kilobytes**, and a deterministic answer the agent can act on and re-verify.
 
@@ -77,10 +77,10 @@ That is the value: **hundreds of tokens, not hundreds of kilobytes**, and a dete
 
 Cornea is **one engine, three doors.** All three returns identical inspection JSON because they funnel through a single shared dispatch.
 
-### 1. CLI — inspect a file
+### 1. CLI. Inspect a file
 
 ```bash
-cornea <file.html> [viewport_width] [--js]
+cornea <file.html | http(s)://url> [viewport_width] [viewport_height] [--js]
 ```
 
 ```text
@@ -95,13 +95,14 @@ $ cornea page.html 360
 }
 ```
 
-### 2. MCP — native agent tools over stdio
+### 2. MCP. Native agent tools over stdio
 
 ```bash
 cornea --serve
 ```
 
-An agent calls `layout.*` tools directly; the page source is passed per-call and stays on disk:
+An agent calls `layout.*` tools directly; it passes the page source, or a
+live URL (see URL capture below), per call:
 
 ```json
 → {"method":"tools/call","params":{"name":"layout.overlaps",
@@ -119,7 +120,7 @@ An agent calls `layout.*` tools directly; the page source is passed per-call and
 | `layout.quality` | 0..1 health score + issue list |
 | `layout.fidelity` | Which CSS features are exact vs approximated |
 
-### 3. HTTP API — call from anything
+### 3. HTTP API. Call from anything
 
 ```bash
 cornea --serve-http [addr]        # default 127.0.0.1:8080
@@ -145,6 +146,42 @@ curl -s -X POST http://127.0.0.1:8080/inspect \
 | `/quality` | POST | Health score |
 | `/fidelity` | GET | Engine capabilities |
 | `/health` | GET | Liveness |
+
+---
+
+## Watching a live page (URL capture)
+
+Every surface accepts a URL where the HTML would go. Cornea fetches the
+page, inlines its external stylesheets and external scripts (relative
+URLs resolved against the page), then inspects what a browser would
+actually show. That is the live coding session loop: run your dev server,
+point cornea at it, read the layout verdict.
+
+```bash
+cornea http://localhost:3000 390
+```
+
+```json
+{ "url": "http://localhost:3000", "width": 390, "height": 844 }  // HTTP /inspect
+```
+
+```json
+{ "method": "tools/call", "params": { "name": "layout.quality",
+  "arguments": { "url": "http://localhost:3000", "width": 390 } } }  // MCP
+```
+
+Honesty around capture:
+
+- Failed fetches leave the original tag in place and record a note, so the
+  report warnings still flag what did not load.
+- A positive `height` emulates a fixed viewport (screenshot frame, iframe,
+  email) and enables below the fold clipping checks. Default 0 means an
+  unbounded scrolling page.
+- Capture is a snapshot in time. Determinism holds engine side: the same
+  fetched bytes always produce the same report.
+- Plain HTTP is supported natively. HTTPS pages need a TLS stack, which the
+  binary does not carry; capture from a local http dev server or pre inline
+  the page with a fetch layer of your own.
 
 ---
 
@@ -179,24 +216,26 @@ curl -s -X POST http://127.0.0.1:8080/inspect \
 
 ---
 
-## Fidelity — honest about what's approximate
+## Fidelity. Honest about what's approximate
 
-Cornea never silently fakes precision. `layout.fidelity` tells an agent exactly what it can trust:
+Cornea never silently fakes precision. `layout.fidelity` tells an agent exactly what it can trust, and every report carries its own `warnings` for sources the engine saw but did not apply (external stylesheets, external scripts, media queries, unresolved colors):
 
 ```json
 {
   "exact":        ["box model", "block flow", "inline text estimates", "flex row/column (no wrap)",
                    "z-index", "visibility", "absolute/fixed left/top", "inline styles",
-                   "class/id/tag selectors", "WCAG contrast (hex + named colors)"],
+                   "class/id/tag selectors", "WCAG contrast (hex, rgb, hsl, alpha)"],
   "approximate":  ["text glyph width (not shaping)", "flex-grow/flex-basis distribution",
-                   "grid", "media queries", "border-radius", "percentage widths"],
-  "deferred":     ["external stylesheets (<link>)", "complex selectors (combinators, pseudo)"],
+                   "percentage widths", "overlap semantics ignore intentional stacking"],
+  "deferred":     ["grid (parsed as block flow)", "media queries", "border-radius",
+                   "external stylesheet <link> when not captured",
+                   "complex selectors (combinators, pseudo)"],
   "js": {
     "engine":      "boa",
     "phase":       "A",
     "enabled":     "opt-in via --js / js:true",
-    "dom_shim":    "minimal (createElement, appendChild, setAttribute, innerHTML, textContent, style)",
-    "unsupported": ["setTimeout", "fetch", "XHR", "addEventListener events", "external <script src>", "React/SPA mounting (Phase B)"]
+    "dom_shim":    "static HTML mirrored in first; getElementById; innerHTML parses markup",
+    "unsupported": ["async APIs", "event dispatch", "selector engine", "React/SPA mounting (Phase B)"]
   }
 }
 ```
@@ -214,29 +253,33 @@ cornea page.html 360 --js            # inline scripts build the DOM first
 { "html": "<p>…</p>", "width": 360, "js": true }   // HTTP /inspect and MCP layout.*
 ```
 
-- The script-built DOM is **authoritative for `<body>`**; static HTML is not yet mirrored in (see `layout.fidelity`).
+- Static HTML is mirrored into the shim before scripts run, so scripts can
+  attach to existing nodes via `document.getElementById`, and `innerHTML`
+  parses real markup into elements. Static content survives script runs.
 - `style.*` assignments are serialized back to `style="…"` and participate in overlap/contrast checks.
-- **Async APIs are rejected** (`setTimeout`, `fetch`, …) rather than hung — any such use is surfaced in the report's `js_notes`, so determinism stays a guarantee.
-- Full React/SPA mounting is **Phase B** (experimental) — tracked in [`ROADMAP-JS.md`](./ROADMAP-JS.md).
+- **Async APIs are rejected** (`setTimeout`, `fetch`, …) rather than hung. Any such use is surfaced in the report's `js_notes`, so determinism stays a guarantee.
+- External `<script src>` runs only when a capture layer (URL capture) inlined its body first.
+- Full React/SPA mounting is **Phase B** (experimental). Tracked in [`ROADMAP-JS.md`](./ROADMAP-JS.md).
 
 ---
 
 ## Visual guide: testing (battle-tested)
 
-35 tests run clean with `cargo test`; CI enforces **fmt, clippy `-D warnings`, release build, tests, and a CLI smoke test** on every push.
+54 tests run clean with `cargo test`; CI enforces **fmt, clippy `-D warnings`, release build, tests, and a CLI smoke test** on every push.
 
 ```text
 $ cargo test
-Running unittests src/lib.rs      ... 24 passed   // determinism, overlap, overflow,
-Running unittests src/main.rs     ...  5 passed    //   contrast, inline flow, flex,
-Running tests/endpoints.rs        ...  6 passed    //   nesting, empty input, MCP, CLI, JS
+Running unittests src/lib.rs      ... 36 passed   // determinism, overlap, overflow,
+Running unittests src/main.rs     ...  9 passed    //   contrast, inline flow, flex,
+Running tests/endpoints.rs        ...  9 passed    //   nesting, empty input, MCP, CLI, JS, capture
 ```
 
-- **Determinism** — same page inspected twice gives byte-identical JSON (the core thesis).
-- **Bug detection** — the fixture's overlaps, overflows, and contrast failures are all asserted.
-- **End-to-end** — the compiled binary is spawned and `layout.*` is called over real stdio MCP.
-- **HTTP** — the TCP server boots on an ephemeral port and real requests are made.
-- **Edge cases** — empty HTML, deep nesting (no crash), `display:none`, long text, flex row/col, inline wrapping.
+- **Determinism**. Same page inspected twice gives byte-identical JSON (the core thesis).
+- **Bug detection**. The fixture's overlaps, overflows, and contrast failures are all asserted.
+- **End-to-end**. The compiled binary is spawned and `layout.*` is called over real stdio MCP.
+- **HTTP**. The TCP server boots on an ephemeral port and real requests are made.
+- **Live capture**. A real page is served over a local socket; linked CSS must change a contrast verdict.
+- **Edge cases**. Empty HTML, deep nesting (no crash), `display:none`, long text, flex row/col, inline wrapping.
 
 ---
 
@@ -244,14 +287,15 @@ Running tests/endpoints.rs        ...  6 passed    //   nesting, empty input, MC
 
 | Feature | Status |
 |---------|--------|
-| Block flow, box model (content/border-box) | ✅ exact |
-| Inline text runs (horizontal, wrapping) | ✅ |
-| Flex row / column (simplified, no wrap) | ✅ approximate |
-| Absolute / fixed positioning (left/top) | ✅ |
-| z-index, visibility, `display:none` | ✅ |
-| `.class` / `#id` / `tag` selectors + inline styles | ✅ |
-| WCAG AA contrast (hex + 18 named colors) | ✅ |
-| Grid, media queries, external `<link>` CSS | ⏳ deferred |
+| Block flow, box model (content/border-box) | exact |
+| Inline text runs (horizontal, wrapping) | exact |
+| Flex row / column (simplified, no wrap) | approximate |
+| Absolute / fixed positioning (left/top) | exact |
+| z-index, visibility, `display:none` | exact |
+| `.class` / `#id` / `tag` selectors + inline styles | exact |
+| WCAG contrast (hex, rgb, hsl, alpha, inherited colors) | exact |
+| Live URL capture (CSS and script inlining) | supported |
+| Grid, media queries, border-radius | deferred |
 
 ---
 
@@ -266,9 +310,10 @@ cornea/
 │   ├── lib.rs             # build_model / analyze pipeline + unit tests
 │   ├── dom.rs             # html5ever -> lightweight element tree
 │   ├── css.rs             # <style> + inline style resolution
+│   ├── fetch.rs           # live URL capture: GET + css/script inlining
 │   ├── layout.rs          # deterministic layout engine
 │   ├── model.rs           # VisualModel / ElementView / Rect
-│   ├── inspect.rs         # overlap / overflow / contrast / quality
+│   ├── inspect.rs         # overlap / overflow / contrast / quality / warnings
 │   ├── rest.rs            # canonical endpoint dispatch (shared by all surfaces)
 │   ├── main.rs            # CLI + stdio MCP server
 │   └── server_http.rs     # dependency-free HTTP/1.1 API
@@ -282,11 +327,11 @@ cornea/
 
 ## Status
 
-**Working MVP, hardened and battle-tested.** Deterministic inspection engine with CLI + MCP + HTTP API, 35 passing tests, green CI, plus Phase A inline-script rendering (`--js`). The roadmap builds toward giving Cornea (and the sibling **Crayon** text-to-image project) an even richer perception over subsequent phases.
+**Working MVP, hardened and battle-tested.** Deterministic inspection engine with CLI + MCP + HTTP API, live URL capture, below the fold checks, report warnings, 54 passing tests, green CI, plus Phase A inline-script rendering (`--js`). The roadmap builds toward giving Cornea (and the sibling **Crayon** text-to-image project) an even richer perception over subsequent phases.
 
 ## Publishing
 
-Cornea is distributed three ways: **crates.io** (`cargo install cornea`), **GitHub Release + Homebrew** (`brew install`), and the **MCP Registry** (`layout.*` tools discoverable by agents). All are staged in this repo — see **[`PUBLISHING.md`](./PUBLISHING.md)** for the tokens, `server.json` manifest, and the release/tag recipe.
+Cornea is distributed three ways: **crates.io** (`cargo install cornea`), **GitHub Release + Homebrew** (`brew install`), and the **MCP Registry** (`layout.*` tools discoverable by agents). All are staged in this repo. See **[`PUBLISHING.md`](./PUBLISHING.md)** for the tokens, `server.json` manifest, and the release/tag recipe.
 
 ## License
 

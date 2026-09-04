@@ -16,11 +16,11 @@ All three are driven by **tagging a version**. Everything is staged in this repo
 
 - [ ] Confirm the **name `cornea` is available** on crates.io: `curl -s https://crates.io/api/v1/crates/cornea` returns `404`.
 - [ ] Decide the **license**. `Cargo.toml` sets `MIT` (crates.io requires a license to publish). Update `README.md`'s "All rights reserved" line and add a `LICENSE` if you open it up.
-- [ ] Make the repo **public** (optional, but recommended) — `cargo publish`, Homebrew taps, and most MCP directories surface a public source.
+- [ ] Make the repo **public** (optional, but recommended). `cargo publish`, Homebrew taps, and most MCP directories surface a public source.
 
 ---
 
-## 1. crates.io (`cargo install cornea`)
+## 1. Crates.io (`cargo install cornea`)
 
 Metadata is already in `Cargo.toml` (license, description, repository, keywords, categories, readme). Verify the package:
 
@@ -70,14 +70,14 @@ Homebrew taps live in **their own repo**. Two options:
 brew install --formula contrib/brew/cornea.rb
 ```
 
-**B. A publishable tap** — create a second repo `AbduljabbarBXR/homebrew-cornea` containing `Formula/cornea.rb` (copy `contrib/brew/cornea.rb`), then update the two `url`/`sha256` placeholders per version. Then:
+**B. A publishable tap**. Create a second repo `AbduljabbarBXR/homebrew-cornea` containing `Formula/cornea.rb` (copy `contrib/brew/cornea.rb`), then update the two `url`/`sha256` placeholders per version. Then:
 
 ```bash
 brew tap AbduljabbarBXR/cornea
 brew install cornea
 ```
 
-For **automatic tap updates**, use [`cargo-dist`](https://opensource.axo.dev/cargo-dist/) — run `cargo dist init` once and it maintains the tap repo + formula for you on every tag.
+For **automatic tap updates**, use [`cargo-dist`](https://opensource.axo.dev/cargo-dist/). Run `cargo dist init` once and it maintains the tap repo + formula for you on every tag.
 
 ---
 
@@ -85,7 +85,7 @@ For **automatic tap updates**, use [`cargo-dist`](https://opensource.axo.dev/car
 
 `server.json` (committed, in the official MCP Registry schema) declares Cornea as a **stdio** server running `cornea --serve`, with all six `layout.*` tools.
 
-The MCP ecosystem consolidated (2026) around the **official registry** at `registry.modelcontextprotocol.io` — publish there first, and it propagates to Smithery, PulseMCP, Glama, etc.
+The MCP ecosystem consolidated (2026) around the **official registry** at `registry.modelcontextprotocol.io`. Publish there first, and it propagates to Smithery, PulseMCP, Glama, etc.
 
 ```bash
 curl -L -sSf https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher-linux-x86_64.tar.gz | tar xz  # install mcp-publisher
@@ -95,7 +95,7 @@ mcp-publisher login github         # prove namespace io.github.AbduljabbarBXR/
 mcp-publisher publish server.json
 ```
 
-> GitHub auth requires the server name to start with `io.github.ABDULJABBARBXR/`. The committed `server.json` already uses that namespace format — keep the username casing consistent with your GitHub login.
+> GitHub auth requires the server name to start with `io.github.ABDULJABBARBXR/`. The committed `server.json` already uses that namespace format. Keep the username casing consistent with your GitHub login.
 
 ### Smithery (optional one-click install)
 

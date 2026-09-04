@@ -157,10 +157,10 @@ This is the hardest part. Options reviewed via research:
 
 | Option | Fidelity | Cost | Verdict |
 |--------|----------|------|---------|
-| **Full WebKit/Chromium** | 100% | Huge | ❌ defeats the purpose (Playwright is this) |
-| **Servo/webrender** | High | Large, complex | ⚠️ possible later, heavy now |
-| **Dioxus Blitz** (Stylo+Taffy+vello_cpu) | High (modern CSS) | Medium; beta | ✅ strong candidate — AginxBrowser proves it; gives real layout + optional CPU raster. **Reuse or learn from Blitz.** |
-| **Own constraint engine** | Approx (documented) | Lowest, full control | ✅ recommended starting point for the *inspection* subset (block/inline/flex/position) |
+| **Full WebKit/Chromium** | 100% | Huge |  defeats the purpose (Playwright is this) |
+| **Servo/webrender** | High | Large, complex |  possible later, heavy now |
+| **Dioxus Blitz** (Stylo+Taffy+vello_cpu) | High (modern CSS) | Medium; beta |  strong candidate — AginxBrowser proves it; gives real layout + optional CPU raster. **Reuse or learn from Blitz.** |
+| **Own constraint engine** | Approx (documented) | Lowest, full control |  recommended starting point for the *inspection* subset (block/inline/flex/position) |
 
 **Recommendation:** Start with a **purpose-built constrained layout core** covering the high-value subset, and treat **Blitz/Taffy** as an integration path to raise fidelity later. Clearly document where layout is approximated (like AginxBrowser does).
 
@@ -220,15 +220,15 @@ Two tiers (see lessons from AginxBrowser & Lightpanda):
 6. **No vision-model dependency** — pure correctness of purpose: Cornea must *never* require a vision model for inspection (deterministic geometry instead). Optional vision only for exotic pixel-only cases.
 
 ### What Cornea MUST have to be worth using (the must-haves)
-- ✅ **Deterministic, byte-identical geometry** (no sub-pixel variance).
-- ✅ **Token-cheap representation** — page reads in 100s of tokens, not MBs.
-- ✅ **Native inspection tools** (overlap/overflow/contrast/compare/responsive) — the wedge no one has.
-- ✅ **`fidelity` honesty** — every result states its confidence/approx level.
-- ✅ **No Chromium dependency**; single binary (Rust) or stdio server.
-- ✅ **Opt-in data** (never auto-dump into context; save to disk, agent reads on demand — Playwright CLI lesson).
-- ✅ **Stable refs** for interaction (a11y-style) when agent needs to act, not just look.
-- ✅ **MCP-over-stdio** + CLI, mirroring heides (no daemon, no ports).
-- ✅ **Regression/compare as first-class** — the only cheap deterministic visual-diff.
+-  **Deterministic, byte-identical geometry** (no sub-pixel variance).
+-  **Token-cheap representation** — page reads in 100s of tokens, not MBs.
+-  **Native inspection tools** (overlap/overflow/contrast/compare/responsive) — the wedge no one has.
+-  **`fidelity` honesty** — every result states its confidence/approx level.
+-  **No Chromium dependency**; single binary (Rust) or stdio server.
+-  **Opt-in data** (never auto-dump into context; save to disk, agent reads on demand — Playwright CLI lesson).
+-  **Stable refs** for interaction (a11y-style) when agent needs to act, not just look.
+-  **MCP-over-stdio** + CLI, mirroring heides (no daemon, no ports).
+-  **Regression/compare as first-class** — the only cheap deterministic visual-diff.
 
 ---
 

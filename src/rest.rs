@@ -105,16 +105,16 @@ pub fn run(
 /// Human- and agent-readable account of engine fidelity.
 pub fn fidelity() -> serde_json::Value {
     json!({
-        "exact": ["box model", "block flow", "inline text estimates", "flex row/column (no wrap)", "z-index", "visibility", "absolute/fixed left/top", "inline styles", "class/id/tag selectors", "WCAG contrast (hex + named colors)"],
-        "approximate": ["text glyph width (not shaping)", "flex-grow/flex-basis distribution", "grid", "media queries", "border-radius", "percentage widths"],
-        "deferred": ["external stylesheets (<link>)", "complex selectors (combinators, pseudo)"],
+        "exact": ["box model", "block flow", "inline text estimates", "flex row/column (no wrap)", "z-index", "visibility", "absolute/fixed left/top", "inline styles", "class/id/tag selectors", "WCAG contrast (hex, rgb, hsl, alpha)"],
+        "approximate": ["text glyph width (not shaping)", "flex-grow/flex-basis distribution", "percentage widths", "overlap semantics ignore intentional stacking (a modal over content is still reported)"],
+        "deferred": ["grid (parsed as block flow)", "media queries", "border-radius", "external stylesheet <link> when not captured", "complex selectors (combinators, pseudo)"],
         "js": {
             "engine": "boa",
             "phase": "A",
             "enabled": "opt-in via --js / js:true",
-            "dom_shim": "minimal (createElement, appendChild, setAttribute, innerHTML, textContent, style)",
-            "unsupported": ["setTimeout", "fetch", "XHR", "addEventListener events", "external <script src>", "React/SPA mounting (Phase B)"],
-            "limits": "script-built DOM is authoritative for <body>; static HTML is not yet mirrored into the shim"
+            "dom_shim": "static HTML mirrored in first; scripts may attach via getElementById; innerHTML parses real markup; className/classList/id supported",
+            "unsupported": ["async APIs (setTimeout, fetch, XHR)", "event dispatch / addEventListener handlers", "CSS selector engine (querySelector)", "React/SPA mounting (Phase B)"],
+            "limits": "only inline scripts run unless a capture layer inlined <script src> bodies"
         }
     })
 }
