@@ -198,13 +198,13 @@ Cornea never silently fakes precision. `layout.fidelity` tells an agent exactly 
 
 ## Visual guide: testing (battle-tested)
 
-26 tests run clean with `cargo test`; CI enforces **fmt, clippy `-D warnings`, release build, tests, and a CLI smoke test** on every push.
+27 tests run clean with `cargo test`; CI enforces **fmt, clippy `-D warnings`, release build, tests, and a CLI smoke test** on every push.
 
 ```text
 $ cargo test
 Running unittests src/lib.rs      ... 18 passed   // determinism, overlap, overflow,
 Running unittests src/main.rs     ...  4 passed    //   contrast, inline flow, flex,
-Running tests/endpoints.rs        ...  4 passed    //   nesting, empty input, MCP, CLI
+Running tests/endpoints.rs        ...  5 passed    //   nesting, empty input, MCP, CLI
 ```
 
 - **Determinism** — same page inspected twice gives byte-identical JSON (the core thesis).
@@ -257,8 +257,12 @@ cornea/
 
 ## Status
 
-**Working MVP, hardened and battle-tested.** Deterministic inspection engine with CLI + MCP + HTTP API, 26 passing tests, green CI. The roadmap builds toward giving Cornea (and the sibling **Crayon** text-to-image project) an even richer perception over subsequent phases.
+**Working MVP, hardened and battle-tested.** Deterministic inspection engine with CLI + MCP + HTTP API, 27 passing tests, green CI. The roadmap builds toward giving Cornea (and the sibling **Crayon** text-to-image project) an even richer perception over subsequent phases.
+
+## Publishing
+
+Cornea is distributed three ways: **crates.io** (`cargo install cornea`), **GitHub Release + Homebrew** (`brew install`), and the **MCP Registry** (`layout.*` tools discoverable by agents). All are staged in this repo — see **[`PUBLISHING.md`](./PUBLISHING.md)** for the tokens, `server.json` manifest, and the release/tag recipe.
 
 ## License
 
-Private research repo. All rights reserved. Not for public distribution until release decision.
+MIT. See [`LICENSE`](./LICENSE).

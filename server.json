@@ -1,0 +1,49 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.AbduljabbarBXR/cornea",
+  "title": "Cornea — deterministic visual inspection",
+  "description": "Deterministic visual inspection of pages (overlap, overflow, contrast, quality) as native agent tools. Token-cheap, no Chromium.",
+  "repository": {
+    "url": "https://github.com/AbduljabbarBXR/cornea",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "cargo",
+      "identifier": "cornea",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio",
+        "command": "cornea",
+        "args": ["--serve"]
+      }
+    }
+  ],
+  "tools": [
+    {
+      "name": "layout.inspect",
+      "description": "Full deterministic visual model + quality summary of a page."
+    },
+    {
+      "name": "layout.overlaps",
+      "description": "Elements whose boxes collide in viewport space."
+    },
+    {
+      "name": "layout.overflow",
+      "description": "Clipped / collapsed / off-screen elements."
+    },
+    {
+      "name": "layout.contrast",
+      "description": "WCAG AA contrast ratios for text elements."
+    },
+    {
+      "name": "layout.quality",
+      "description": "Combined 0..1 health score with issue list."
+    },
+    {
+      "name": "layout.fidelity",
+      "description": "Which CSS features are exact vs approximated in the engine."
+    }
+  ]
+}
