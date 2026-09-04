@@ -150,6 +150,7 @@ fn write_response(stream: &mut TcpStream, status: u16, body: &str) -> std::io::R
         404 => "Not Found",
         413 => "Payload Too Large",
         500 => "Internal Server Error",
+        502 => "Bad Gateway",
         _ => "OK",
     };
     let headers = format!(

@@ -43,12 +43,12 @@ fn main() {
 
     if args.len() < 2 {
         eprintln!(
-            "usage: cornea <file.html> [viewport_width] [viewport_height] [--js] | --serve | --serve-http [addr] | --version"
+            "usage: cornea <file.html | http(s)://url> [viewport_width] [viewport_height] [--js] | --serve | --serve-http [addr] | --version"
         );
         std::process::exit(2);
     }
 
-    let path = &args[1];
+    let arg1 = args[1].clone();
     let viewport_w = args
         .get(2)
         .and_then(|s| s.parse::<f64>().ok())
@@ -60,11 +60,24 @@ fn main() {
         .unwrap_or(0.0);
     let run_js = args.iter().any(|a| a == "--js");
 
-    let html = match std::fs::read_to_string(path) {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("error reading {}: {}", path, e);
-            std::process::exit(1);
+    // live capture: a URL argument fetches the page and inlines its
+    // stylesheets and scripts so the deterministic engine sees a real page
+    let is_url = arg1.starts_with("http://") || arg1.starts_with("https://");
+    let (display_name, html, fetch_notes): (String, String, Vec<String>) = if is_url {
+        match cornea::fetch::fetch_and_inline(&arg1) {
+            Ok(page) => (arg1, page.html, page.notes),
+            Err(e) => {
+                eprintln!("error: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        match std::fs::read_to_string(&arg1) {
+            Ok(h) => (arg1, h, Vec::new()),
+            Err(e) => {
+                eprintln!("error reading {}: {}", arg1, e);
+                std::process::exit(1);
+            }
         }
     };
 
@@ -76,6 +89,7 @@ fn main() {
 
     let (_model, mut report) = analyze_vh(&calc_html, viewport_w, viewport_h);
     report.js_notes = js_notes;
+    report.warnings.extend(fetch_notes);
 
     // token estimate measured on the report only (the part an agent consumes)
     let report_json = serde_json::to_string(&report).unwrap();
@@ -83,7 +97,7 @@ fn main() {
     let est_tokens = rest::est_tokens(json_bytes);
 
     let output = CliOutput {
-        html_file: path.clone(),
+        html_file: display_name,
         viewport_w,
         element_count: report.total_elements,
         json_bytes,
@@ -222,8 +236,9 @@ impl McpServer {
         }
 
         let html = args.get("html").and_then(|h| h.as_str()).unwrap_or("");
-        if html.is_empty() {
-            return json!({ "content": [ text_content("error: missing 'html' argument (the page source)") ], "isError": true });
+        let url = args.get("url").and_then(|u| u.as_str()).unwrap_or("");
+        if html.is_empty() && url.trim().is_empty() {
+            return json!({ "content": [ text_content("error: missing 'html' (the page source) or 'url' (a live page to fetch)") ], "isError": true });
         }
         let width = args
             .get("width")
@@ -241,8 +256,10 @@ impl McpServer {
         };
         let js = args.get("js").and_then(|j| j.as_bool()).unwrap_or(false);
         let height = args.get("height").and_then(|h| h.as_f64()).unwrap_or(0.0);
-        let req = serde_json::json!({ "html": html, "width": width, "height": height, "js": js })
-            .to_string();
+        let req = serde_json::json!({
+            "html": html, "url": url, "width": width, "height": height, "js": js
+        })
+        .to_string();
         let (status, payload) = rest::dispatch(endpoint, &req);
         if endpoint.is_empty() || status >= 400 {
             return json!({ "content": [ text_content(format!("error: {}", payload)) ], "isError": true });
@@ -256,11 +273,12 @@ fn tool_def(name: &str, description: &str) -> serde_json::Value {
         "type": "object",
         "properties": {
             "html": { "type": "string", "description": "The HTML source of the page to inspect" },
+            "url": { "type": "string", "description": "Alternative to html: fetch this live URL and inline its stylesheets and scripts first (opt in snapshot)" },
             "width": { "type": "number", "description": "Viewport width in px (default 360)" },
             "height": { "type": "number", "description": "Optional viewport height in px; positive values enable below the fold clipping detection (default 0 = unbounded page)" },
             "js": { "type": "boolean", "description": "Execute inline scripts first (Phase A: DOM shim over mirrored static HTML)" }
         },
-        "required": ["html"]
+        "required": []
     });
     json!({
         "name": name,

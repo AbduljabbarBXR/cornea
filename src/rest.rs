@@ -4,7 +4,7 @@
 //! single `dispatch` function so behavior is identical everywhere and is
 //! directly testable end-to-end.
 
-use crate::{analyze_vh, layout};
+use crate::{analyze_vh, fetch, layout};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -15,7 +15,13 @@ pub const ENDPOINTS: &[&str] = &[
 
 #[derive(Debug, Deserialize)]
 pub struct Request {
+    #[serde(default)]
     pub html: String,
+    /// Alternative to `html`: fetch this live URL and inline its stylesheets
+    /// and scripts before inspecting (opt-in snapshot, inherently non
+    /// deterministic across time).
+    #[serde(default)]
+    pub url: Option<String>,
     #[serde(default)]
     pub width: Option<f64>,
     #[serde(default)]
@@ -39,7 +45,18 @@ pub fn dispatch(endpoint: &str, body: &str) -> (u16, String) {
             };
             let width = req.width.unwrap_or(layout::DEFAULT_WIDTH);
             let height = req.height.unwrap_or(0.0);
-            run(endpoint, &req.html, width, height, req.js)
+            // url replaces html when html is absent: fetch + inline first
+            if req.html.trim().is_empty() {
+                match req.url.as_deref() {
+                    Some(u) if !u.trim().is_empty() => match fetch::fetch_and_inline(u) {
+                        Ok(page) => run(endpoint, &page.html, width, height, req.js, &page.notes),
+                        Err(e) => (502, error_json(&format!("cannot fetch {}: {}", u, e))),
+                    },
+                    _ => (400, error_json("missing 'html' (the page source) or 'url'")),
+                }
+            } else {
+                run(endpoint, &req.html, width, height, req.js, &[])
+            }
         }
     }
 }
@@ -47,8 +64,16 @@ pub fn dispatch(endpoint: &str, body: &str) -> (u16, String) {
 /// Analyze and serialize a single endpoint; shared by MCP/HTTP/CLI/tests.
 /// When `js` is true, inline scripts are executed first (boA + DOM shim).
 /// `height` of 0 means an unbounded scrolling page; a positive height enables
-/// below-the-fold clipping detection.
-pub fn run(endpoint: &str, html: &str, width: f64, height: f64, js: bool) -> (u16, String) {
+/// below-the-fold clipping detection. `extra_warnings` (e.g. capture notes
+/// from a live fetch) ride along in the report's warnings list.
+pub fn run(
+    endpoint: &str,
+    html: &str,
+    width: f64,
+    height: f64,
+    js: bool,
+    extra_warnings: &[String],
+) -> (u16, String) {
     if html.trim().is_empty() {
         return (400, error_json("missing 'html' (the page source)"));
     }
@@ -59,6 +84,7 @@ pub fn run(endpoint: &str, html: &str, width: f64, height: f64, js: bool) -> (u1
     };
     let (_model, mut report) = analyze_vh(&calc_html, width, height);
     report.js_notes = js_notes;
+    report.warnings.extend(extra_warnings.iter().cloned());
     let value = match endpoint {
         "inspect" => serde_json::to_value(&report).unwrap_or(json!({})),
         "overlaps" => serde_json::to_value(&report.overlaps).unwrap_or(json!([])),

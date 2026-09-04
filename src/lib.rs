@@ -6,6 +6,7 @@
 
 pub mod css;
 pub mod dom;
+pub mod fetch;
 pub mod inspect;
 pub mod js;
 pub mod layout;

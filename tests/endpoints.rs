@@ -195,6 +195,104 @@ fn cli_js_flag_runs_inline_script_and_detects_built_overlap() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// A minimal test origin: serves a page with an external stylesheet (chunked
+/// encoding) so the live capture path is exercised end to end.
+fn start_capture_origin() -> u16 {
+    use std::net::TcpListener;
+    use std::thread;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        for stream in listener.incoming().take(8) {
+            let Ok(mut s) = stream else { continue };
+            let _ = (|| -> std::io::Result<()> {
+                use std::io::{BufRead, BufReader, Write};
+                let mut reader = BufReader::new(s.try_clone()?);
+                let mut req = String::new();
+                let _ = reader.read_line(&mut req);
+                let css = b"body{background-color:#000000;}";
+                if req.contains("/site.css") {
+                    let head = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+                    let chunk = format!("{:x}\r\n", css.len());
+                    s.write_all(head.as_bytes())?;
+                    s.write_all(chunk.as_bytes())?;
+                    s.write_all(css)?;
+                    s.write_all(b"\r\n0\r\n\r\n")?;
+                } else {
+                    let body = "<html><head><link rel=\"stylesheet\" href=\"/site.css\"></head>\
+                        <body><p style=\"color:#ffffff\">hi</p></body></html>";
+                    let head = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n",
+                        body.len()
+                    );
+                    s.write_all(head.as_bytes())?;
+                    s.write_all(body.as_bytes())?;
+                }
+                s.flush()
+            })();
+        }
+    });
+    port
+}
+
+#[test]
+fn cli_fetch_url_inlines_external_stylesheet() {
+    let port = start_capture_origin();
+    let url = format!("http://127.0.0.1:{}/", port);
+    let out = bin()
+        .arg(&url)
+        .arg("360")
+        .output()
+        .expect("run CLI against a live URL");
+    assert!(
+        out.status.success(),
+        "fetch mode must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(out.stdout).unwrap()).unwrap();
+    assert_eq!(report["html_file"], url, "output names the fetched URL");
+    // the stylesheet was inlined, so body's black background reaches the p
+    let row = report["report"]["contrast"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["selector"].as_str().unwrap_or("").ends_with(">p"))
+        .expect("p contrast row");
+    assert_eq!(row["bg"], "#000000", "linked css must be applied");
+    assert!(
+        row["pass_aa"].as_bool().unwrap(),
+        "white on black from a live stylesheet must pass AA"
+    );
+    // and the warnings no longer complain about an external stylesheet
+    let joined: Vec<String> = report["report"]["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w.as_str().unwrap_or("").to_string())
+        .collect();
+    assert!(
+        !joined.iter().any(|w| w.contains("external stylesheet")),
+        "inlined css should clear the link warning: {:?}",
+        joined
+    );
+}
+
+#[test]
+fn cli_fetch_unreachable_url_fails_cleanly() {
+    let out = bin()
+        .arg("http://127.0.0.1:1/")
+        .output()
+        .expect("run CLI against a dead port");
+    assert!(!out.status.success(), "unreachable host must exit non zero");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("error:"),
+        "failure should be reported on stderr, got: {}",
+        err
+    );
+}
+
 #[test]
 fn cli_height_flag_detects_below_fold_clipping() {
     let dir = std::env::temp_dir();
