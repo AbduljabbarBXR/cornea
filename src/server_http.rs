@@ -71,28 +71,32 @@ fn handle_conn(mut stream: TcpStream) -> std::io::Result<()> {
     let body_str = String::from_utf8_lossy(&body).to_string();
 
     let endpoint = endpoint_from_path(&path);
-    let (status, payload) = rest::dispatch(endpoint, &body_str);
-    write_response(&mut stream, status, &payload)?;
+    let result = match endpoint {
+        Some(e) => {
+            let (status, payload) = rest::dispatch(e, &body_str);
+            (status, payload)
+        }
+        None => (
+            404,
+            serde_json::json!({ "error": format!("unknown endpoint: {}", path) }).to_string(),
+        ),
+    };
+    write_response(&mut stream, result.0, &result.1)?;
     Ok(())
 }
 
-fn endpoint_from_path(path: &str) -> &'static str {
+fn endpoint_from_path(path: &str) -> Option<&'static str> {
     let t = path.trim_matches('/');
     // map to a known static endpoint name (rejecting traversal / unknown)
     if t.is_empty() {
-        "inspect"
-    } else if rest::ENDPOINTS.contains(&t) || t == "health" {
+        Some("inspect") // "/" -> inspect
+    } else if t == "health" {
+        Some("health")
+    } else if rest::ENDPOINTS.contains(&t) {
         // ENDPOINTS items are 'static str; find the canonical matching one
-        if t == "health" {
-            "health"
-        } else {
-            rest::ENDPOINTS
-                .iter()
-                .find(|&&e| e == t)
-                .unwrap_or(&"inspect")
-        }
+        rest::ENDPOINTS.iter().find(|&&e| e == t).copied()
     } else {
-        "inspect" // unknown path -> treat as inspect; dispatch returns 404 if body malformed
+        None // unknown path -> 404
     }
 }
 
@@ -192,6 +196,17 @@ mod tests {
         assert!(
             resp.starts_with("HTTP/1.1 400"),
             "missing html should be 400, got: {}",
+            &resp[..resp.len().min(40)]
+        );
+    }
+
+    #[test]
+    fn http_unknown_path_returns_404() {
+        let port = start_server();
+        let resp = raw_request(port, "GET /does-not-exist HTTP/1.1\r\nHost: x\r\n\r\n");
+        assert!(
+            resp.starts_with("HTTP/1.1 404"),
+            "unknown path should be 404, got: {}",
             &resp[..resp.len().min(40)]
         );
     }
