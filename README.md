@@ -80,7 +80,7 @@ Cornea is **one engine, three doors.** All three returns identical inspection JS
 ### 1. CLI — inspect a file
 
 ```bash
-cornea <file.html> [viewport_width]
+cornea <file.html> [viewport_width] [--js]
 ```
 
 ```text
@@ -190,21 +190,46 @@ Cornea never silently fakes precision. `layout.fidelity` tells an agent exactly 
                    "class/id/tag selectors", "WCAG contrast (hex + named colors)"],
   "approximate":  ["text glyph width (not shaping)", "flex-grow/flex-basis distribution",
                    "grid", "media queries", "border-radius", "percentage widths"],
-  "deferred":     ["JS/DOM scripting", "external stylesheets (<link>)", "complex selectors (combinators, pseudo)"]
+  "deferred":     ["external stylesheets (<link>)", "complex selectors (combinators, pseudo)"],
+  "js": {
+    "engine":      "boa",
+    "phase":       "A",
+    "enabled":     "opt-in via --js / js:true",
+    "dom_shim":    "minimal (createElement, appendChild, setAttribute, innerHTML, textContent, style)",
+    "unsupported": ["setTimeout", "fetch", "XHR", "addEventListener events", "external <script src>", "React/SPA mounting (Phase B)"]
+  }
 }
 ```
+
+## JavaScript built-in pages (Phase A)
+
+Cornea can execute **inline `<script>`** that builds its DOM via a minimal shim,
+then run the result through the same deterministic layout engine:
+
+```bash
+cornea page.html 360 --js            # inline scripts build the DOM first
+```
+
+```json
+{ "html": "<p>…</p>", "width": 360, "js": true }   // HTTP /inspect and MCP layout.*
+```
+
+- The script-built DOM is **authoritative for `<body>`**; static HTML is not yet mirrored in (see `layout.fidelity`).
+- `style.*` assignments are serialized back to `style="…"` and participate in overlap/contrast checks.
+- **Async APIs are rejected** (`setTimeout`, `fetch`, …) rather than hung — any such use is surfaced in the report's `js_notes`, so determinism stays a guarantee.
+- Full React/SPA mounting is **Phase B** (experimental) — tracked in [`ROADMAP-JS.md`](./ROADMAP-JS.md).
 
 ---
 
 ## Visual guide: testing (battle-tested)
 
-27 tests run clean with `cargo test`; CI enforces **fmt, clippy `-D warnings`, release build, tests, and a CLI smoke test** on every push.
+35 tests run clean with `cargo test`; CI enforces **fmt, clippy `-D warnings`, release build, tests, and a CLI smoke test** on every push.
 
 ```text
 $ cargo test
-Running unittests src/lib.rs      ... 18 passed   // determinism, overlap, overflow,
-Running unittests src/main.rs     ...  4 passed    //   contrast, inline flow, flex,
-Running tests/endpoints.rs        ...  5 passed    //   nesting, empty input, MCP, CLI
+Running unittests src/lib.rs      ... 24 passed   // determinism, overlap, overflow,
+Running unittests src/main.rs     ...  5 passed    //   contrast, inline flow, flex,
+Running tests/endpoints.rs        ...  6 passed    //   nesting, empty input, MCP, CLI, JS
 ```
 
 - **Determinism** — same page inspected twice gives byte-identical JSON (the core thesis).
@@ -257,7 +282,7 @@ cornea/
 
 ## Status
 
-**Working MVP, hardened and battle-tested.** Deterministic inspection engine with CLI + MCP + HTTP API, 27 passing tests, green CI. The roadmap builds toward giving Cornea (and the sibling **Crayon** text-to-image project) an even richer perception over subsequent phases.
+**Working MVP, hardened and battle-tested.** Deterministic inspection engine with CLI + MCP + HTTP API, 35 passing tests, green CI, plus Phase A inline-script rendering (`--js`). The roadmap builds toward giving Cornea (and the sibling **Crayon** text-to-image project) an even richer perception over subsequent phases.
 
 ## Publishing
 
