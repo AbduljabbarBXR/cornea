@@ -101,4 +101,93 @@ mod tests {
             .expect("wide element should exist");
         assert!(wide.bbox.w >= 600.0, "explicit width must not be clamped");
     }
+
+    #[test]
+    fn inline_siblings_flow_horizontally_not_stacked() {
+        let (m, _r) = analyze(
+            "<html><body><span>Hello</span><span>World</span></body></html>",
+            360.0,
+        );
+        let spans: Vec<_> = m.elements.iter().filter(|e| e.tag == "span").collect();
+        assert_eq!(spans.len(), 2, "expected two inline spans");
+        let (a, b) = (spans[0], spans[1]);
+        assert!(
+            b.bbox.x > a.bbox.x,
+            "second inline should sit to the right of the first (horizontal flow), got a.x={} b.x={}",
+            a.bbox.x,
+            b.bbox.x
+        );
+        assert!(
+            (a.bbox.y - b.bbox.y).abs() < 1.0,
+            "inline siblings should share a line (same y)"
+        );
+    }
+
+    #[test]
+    fn empty_html_produces_no_errors() {
+        let (m, r) = analyze("", 360.0);
+        assert!(!m.elements.is_empty());
+        assert!(serde_json::to_string(&r).is_ok());
+    }
+
+    #[test]
+    fn deeply_nested_html_does_not_crash() {
+        let depth = 100;
+        let mut html = String::from("<body>");
+        for _ in 0..depth {
+            html.push_str("<div>");
+        }
+        html.push('x');
+        for _ in 0..depth {
+            html.push_str("</div>");
+        }
+        html.push_str("</body>");
+        let (_m, r) = analyze(&html, 360.0);
+        assert!(r.total_elements >= depth, "all nested divs counted");
+    }
+
+    #[test]
+    fn flex_row_distributes_siblings_evenly() {
+        let (m, _r) = analyze(
+            "<html><body><div style=\"display:flex;width:200\"><div>A</div><div>B</div></div></body></html>",
+            360.0,
+        );
+        let kids: Vec<_> = m
+            .elements
+            .iter()
+            .filter(|e| e.text.as_deref() == Some("A") || e.text.as_deref() == Some("B"))
+            .collect();
+        assert_eq!(kids.len(), 2);
+        assert!(
+            kids[1].bbox.x > kids[0].bbox.x,
+            "flex row children should sit side by side"
+        );
+    }
+
+    #[test]
+    fn display_none_is_invisible_and_zero_sized() {
+        let (m, _r) = analyze(
+            "<html><body><div style=\"display:none\">hidden</div><div>shown</div></body></html>",
+            360.0,
+        );
+        let hidden = m
+            .elements
+            .iter()
+            .find(|e| e.text.as_deref() == Some("hidden"))
+            .expect("hidden element exists");
+        assert!(!hidden.visible, "display:none must be invisible");
+        assert_eq!(hidden.bbox.w, 0.0);
+        assert_eq!(hidden.bbox.h, 0.0);
+    }
+
+    #[test]
+    fn long_text_is_not_inlined_into_report() {
+        let long = "x".repeat(100);
+        let (m, _r) = analyze(&format!("<html><body><p>{}</p></body></html>", long), 360.0);
+        let p = m.elements.iter().find(|e| e.tag == "p").expect("p exists");
+        assert!(
+            p.text.is_none(),
+            "text over 60 chars should be omitted to keep the report lean"
+        );
+    }
 }
