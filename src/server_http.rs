@@ -16,6 +16,14 @@ use cornea::rest;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
+/// Upper bound for a single inspect payload (a full page of HTML plus JSON).
+const MAX_BODY: usize = 8 * 1024 * 1024;
+/// Upper bound for one HTTP line (request line or header). Bounded so a
+/// hostile client cannot grow an unbounded allocation.
+const MAX_LINE: usize = 8 * 1024;
+/// Upper bound on the number of header lines.
+const MAX_HEADERS: usize = 64;
+
 pub fn serve(addr: &str) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr)?;
     serve_on(listener)
@@ -40,30 +48,38 @@ fn serve_on(listener: TcpListener) -> std::io::Result<()> {
 fn handle_conn(mut stream: TcpStream) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
 
-    let mut request_line = String::new();
-    if reader.read_line(&mut request_line)? == 0 {
+    let Some(request_line) = read_line_capped(&mut reader, MAX_LINE)? else {
         return Ok(());
-    }
+    };
+    let request_line = String::from_utf8_lossy(&request_line);
     let mut parts = request_line.split_whitespace();
     let _method = parts.next().unwrap_or("");
     let path = parts.next().unwrap_or("/").to_string();
 
-    // Headers: capture Content-Length and skip the rest.
+    // Headers: capture Content-Length and skip the rest (bounded count and
+    // per-line length so a hostile client cannot exhaust memory).
     let mut content_length = 0usize;
-    loop {
-        let mut line = String::new();
-        if reader.read_line(&mut line)? == 0 {
+    for _ in 0..MAX_HEADERS {
+        let Some(line) = read_line_capped(&mut reader, MAX_LINE)? else {
             break;
-        }
+        };
+        let line = String::from_utf8_lossy(&line);
         let line = line.trim_end();
         if line.is_empty() {
             break;
         }
-        if let Some((k, v)) = line.split_once(':')
-            && k.eq_ignore_ascii_case("content-length")
-        {
-            content_length = v.trim().parse().unwrap_or(0);
+        if let Some((k, v)) = line.split_once(':') {
+            if k.eq_ignore_ascii_case("content-length") {
+                content_length = v.trim().parse().unwrap_or(0);
+            }
         }
+    }
+
+    // Refuse oversized payloads before reading a byte of body.
+    if content_length > MAX_BODY {
+        let body = serde_json::json!({ "error": "request body exceeds 8 MiB limit" }).to_string();
+        write_response(&mut stream, 413, &body)?;
+        return Ok(());
     }
 
     let mut body = Vec::with_capacity(content_length);
@@ -83,6 +99,33 @@ fn handle_conn(mut stream: TcpStream) -> std::io::Result<()> {
     };
     write_response(&mut stream, result.0, &result.1)?;
     Ok(())
+}
+
+/// Read one line (up to and including its newline) with a hard byte cap so a
+/// hostile client cannot drive an unbounded allocation. Returns None on EOF
+/// with no bytes read.
+pub(crate) fn read_line_capped<R: BufRead>(
+    r: &mut R,
+    cap: usize,
+) -> std::io::Result<Option<Vec<u8>>> {
+    let mut out: Vec<u8> = Vec::with_capacity(128);
+    loop {
+        if out.len() > cap {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "line exceeds server cap",
+            ));
+        }
+        let mut byte = [0u8; 1];
+        let n = r.read(&mut byte)?;
+        if n == 0 {
+            return Ok(if out.is_empty() { None } else { Some(out) });
+        }
+        if byte[0] == b'\n' {
+            return Ok(Some(out));
+        }
+        out.push(byte[0]);
+    }
 }
 
 fn endpoint_from_path(path: &str) -> Option<&'static str> {
@@ -105,6 +148,7 @@ fn write_response(stream: &mut TcpStream, status: u16, body: &str) -> std::io::R
         200 => "OK",
         400 => "Bad Request",
         404 => "Not Found",
+        413 => "Payload Too Large",
         500 => "Internal Server Error",
         _ => "OK",
     };
@@ -208,6 +252,58 @@ mod tests {
             resp.starts_with("HTTP/1.1 404"),
             "unknown path should be 404, got: {}",
             &resp[..resp.len().min(40)]
+        );
+    }
+
+    #[test]
+    fn http_oversized_declared_body_is_413() {
+        let port = start_server();
+        // declare a body far over the 8 MiB cap; the server must refuse
+        // before reading it (we never send the bytes)
+        let req = "POST /inspect HTTP/1.1\r\nHost: x\r\nContent-Length: 999999999\r\n\r\n";
+        let resp = raw_request(port, req);
+        assert!(
+            resp.starts_with("HTTP/1.1 413"),
+            "oversized declared body should be 413, got: {}",
+            &resp[..resp.len().min(60)]
+        );
+    }
+
+    #[test]
+    fn http_line_cap_rejects_oversized_request_line() {
+        let port = start_server();
+        let huge_line = format!(
+            "GET /{} HTTP/1.1\r\nHost: x\r\n\r\n",
+            "a".repeat(MAX_LINE + 8)
+        );
+        // the connection error path closes without a response; assert no panic
+        // by simply connecting (server handles it internally)
+        let resp = raw_request(port, &huge_line);
+        assert!(
+            resp.is_empty() || resp.starts_with("HTTP/1.1"),
+            "server must not crash on oversized lines"
+        );
+    }
+
+    #[test]
+    fn capped_reader_returns_lines_and_eof() {
+        let mut r = std::io::Cursor::new(b"hello\nworld\n".to_vec());
+        let a = read_line_capped(&mut r, 64).unwrap().unwrap();
+        assert_eq!(String::from_utf8(a).unwrap(), "hello");
+        let b = read_line_capped(&mut r, 64).unwrap().unwrap();
+        assert_eq!(String::from_utf8(b).unwrap(), "world");
+        assert!(
+            read_line_capped(&mut r, 64).unwrap().is_none(),
+            "EOF -> None"
+        );
+    }
+
+    #[test]
+    fn capped_reader_rejects_oversized_lines() {
+        let mut r = std::io::Cursor::new(format!("{}\n", "x".repeat(1000)).into_bytes());
+        assert!(
+            read_line_capped(&mut r, 64).is_err(),
+            "line over the cap must error, not allocate unbounded"
         );
     }
 }

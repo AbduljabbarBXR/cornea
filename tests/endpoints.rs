@@ -61,7 +61,8 @@ fn mcp_initialize_and_tools_list() {
         stdin
             .write_all(
                 b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n\
-                  {\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n",
+                  {\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n\
+                  {\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"}\n",
             )
             .unwrap();
         stdin.flush().unwrap();
@@ -77,7 +78,11 @@ fn mcp_initialize_and_tools_list() {
         .unwrap();
     child.wait().unwrap();
     let lines: Vec<&str> = buf.lines().collect();
-    assert_eq!(lines.len(), 2, "expected init + tools/list responses");
+    assert_eq!(
+        lines.len(),
+        3,
+        "expected init + tools/list + ping responses"
+    );
     let init: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
     assert_eq!(init["id"], 1);
     assert!(init["result"]["serverInfo"]["name"] == "cornea");
@@ -98,6 +103,16 @@ fn mcp_initialize_and_tools_list() {
     ] {
         assert!(names.contains(&expected), "missing tool {}", expected);
     }
+    let ping: serde_json::Value = serde_json::from_str(lines[2]).unwrap();
+    assert_eq!(ping["id"], 3, "ping response echoes the request id");
+    assert!(
+        ping["result"]
+            .as_object()
+            .map(|o| o.is_empty())
+            .unwrap_or(false),
+        "ping must answer with an empty result, got: {}",
+        lines[2]
+    );
 }
 
 #[test]

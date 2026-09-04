@@ -1,7 +1,7 @@
 use cornea::{analyze, inspect, layout, rest};
 use serde::Serialize;
 use serde_json::json;
-use std::io::{BufRead, Write};
+use std::io::Write;
 
 mod server_http;
 
@@ -97,20 +97,39 @@ fn main() {
 // arguments (an agent reads its built file and passes it in).
 // ---------------------------------------------------------------------------
 
+/// Per-request line cap: a page's HTML rides in one JSON line, so the cap is
+/// generous (16 MiB) but still bounded against hostile clients.
+const MCP_MAX_LINE: usize = 16 * 1024 * 1024;
+
 fn serve_stdio() {
     let stdin = std::io::stdin();
+    let mut lock = stdin.lock();
     let mut server = McpServer;
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else { break };
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let resp = server.handle(line);
-        if let Some(r) = resp {
-            let mut out = std::io::stdout().lock();
-            let _ = writeln!(out, "{}", r);
-            let _ = out.flush();
+    loop {
+        match server_http::read_line_capped(&mut lock, MCP_MAX_LINE) {
+            Ok(Some(line)) => {
+                let trimmed = String::from_utf8_lossy(&line);
+                let trimmed = trimmed.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if let Some(r) = server.handle(trimmed) {
+                    let mut out = std::io::stdout().lock();
+                    let _ = writeln!(out, "{}", r);
+                    let _ = out.flush();
+                }
+            }
+            Ok(None) => break, // stdin closed: clean exit
+            Err(e) => {
+                eprintln!("cornea mcp: dropping oversized request line: {}", e);
+                let mut out = std::io::stdout().lock();
+                let _ = writeln!(
+                    out,
+                    "{}",
+                    error_json(None, -32000, "request line exceeds 16 MiB cap".to_string())
+                );
+                let _ = out.flush();
+            }
         }
     }
 }
@@ -134,7 +153,8 @@ impl McpServer {
                     "serverInfo": { "name": "cornea", "version": env!("CARGO_PKG_VERSION") }
                 })
             }
-            "notifications/initialized" => return None,
+            "notifications/initialized" | "notifications/cancelled" => return None,
+            "ping" => json!({}),
             "tools/list" => self.tools_list(),
             "tools/call" => {
                 let params = req.get("params").cloned().unwrap_or(json!({}));
