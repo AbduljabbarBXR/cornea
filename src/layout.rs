@@ -70,7 +70,10 @@ impl<'a> LayoutEngine<'a> {
         });
         let root_el = match self.root {
             Node::Elem(e) => e,
-            Node::Text(_) => panic!("cornea: root must be an element"),
+            // The root is always the converted html5ever Document node (see
+            // dom::parse), which produces a top-level element, never a Text
+            // node. Safe by construction — kept unreachable! for intent.
+            Node::Text(_) => unreachable!("cornea: root must be an element"),
         };
         self.layout_block(root_el, root_box, &mut String::from(""), 0);
         let element_count = self.elements.len();
