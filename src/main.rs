@@ -43,9 +43,86 @@ fn main() {
 
     if args.len() < 2 {
         eprintln!(
-            "usage: cornea <file.html | http(s)://url> [viewport_width] [viewport_height] [--js] | --serve | --serve-http [addr] | --version"
+            "usage: cornea <file.html | http(s)://url> [viewport_width] [viewport_height] [--js] | --pageview <target> [w] [h] | --scrape <target> | --browsers | --open <url> [browser] | --serve | --serve-http [addr] | --version"
         );
         std::process::exit(2);
+    }
+
+    // system and reporting verbs
+    match args[1].as_str() {
+        "--browsers" | "-B" => {
+            let list = cornea::probe::detect();
+            println!("{}", serde_json::to_string_pretty(&list).unwrap());
+            return;
+        }
+        "--open" => {
+            let Some(url) = args.get(2) else {
+                eprintln!("usage: cornea --open <url> [browser]");
+                std::process::exit(2);
+            };
+            let browser = args.get(3).map(|s| s.as_str());
+            match cornea::probe::open_url(url, browser) {
+                Ok(msg) => println!("{}", msg),
+                Err(e) => {
+                    eprintln!("error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        "--pageview" => {
+            let Some(target) = args.get(2) else {
+                eprintln!(
+                    "usage: cornea --pageview <file|url> [viewport_width] [viewport_height] [--js]"
+                );
+                std::process::exit(2);
+            };
+            let w = num_arg(&args, 3).unwrap_or(layout::DEFAULT_WIDTH);
+            let h = num_arg(&args, 4).unwrap_or(0.0);
+            let run_js = args.iter().any(|a| a == "--js");
+            match load_source(target) {
+                Ok((_name, html, notes)) => {
+                    let (calc, _js) = maybe_run_js(&html, run_js);
+                    let mut view = cornea::report::page_view(&calc, w, h);
+                    if let Some(stats) = view.get_mut("stats")
+                        && let Some(obj) = stats.as_object_mut()
+                    {
+                        obj.insert(
+                            "warnings".into(),
+                            serde_json::json!(merge_warnings(&calc, &notes, run_js)),
+                        );
+                    }
+                    println!("{}", serde_json::to_string_pretty(&view).unwrap());
+                }
+                Err(e) => {
+                    eprintln!("error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        "--scrape" => {
+            let Some(target) = args.get(2) else {
+                eprintln!("usage: cornea --scrape <file|url> [--js]");
+                std::process::exit(2);
+            };
+            let run_js = args.iter().any(|a| a == "--js");
+            match load_source(target) {
+                Ok((_name, html, _notes)) => {
+                    let (calc, _js) = maybe_run_js(&html, run_js);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&cornea::scrape::scrape(&calc)).unwrap()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        _ => {}
     }
 
     let arg1 = args[1].clone();
@@ -60,32 +137,15 @@ fn main() {
         .unwrap_or(0.0);
     let run_js = args.iter().any(|a| a == "--js");
 
-    // live capture: a URL argument fetches the page and inlines its
-    // stylesheets and scripts so the deterministic engine sees a real page
-    let is_url = arg1.starts_with("http://") || arg1.starts_with("https://");
-    let (display_name, html, fetch_notes): (String, String, Vec<String>) = if is_url {
-        match cornea::fetch::fetch_and_inline(&arg1) {
-            Ok(page) => (arg1, page.html, page.notes),
-            Err(e) => {
-                eprintln!("error: {}", e);
-                std::process::exit(1);
-            }
-        }
-    } else {
-        match std::fs::read_to_string(&arg1) {
-            Ok(h) => (arg1, h, Vec::new()),
-            Err(e) => {
-                eprintln!("error reading {}: {}", arg1, e);
-                std::process::exit(1);
-            }
+    let (display_name, html, fetch_notes) = match load_source(&arg1) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            std::process::exit(1);
         }
     };
 
-    let (calc_html, js_notes) = if run_js {
-        cornea::js::execute_checked(&html)
-    } else {
-        (html.clone(), Vec::new())
-    };
+    let (calc_html, js_notes) = maybe_run_js(&html, run_js);
 
     let (_model, mut report) = analyze_vh(&calc_html, viewport_w, viewport_h);
     report.js_notes = js_notes;
@@ -106,6 +166,49 @@ fn main() {
     };
 
     println!("{}", serde_json::to_string_pretty(&output).unwrap());
+}
+
+// ---------------------------------------------------------------------------
+// CLI helpers
+// ---------------------------------------------------------------------------
+
+fn num_arg(args: &[String], idx: usize) -> Option<f64> {
+    args.get(idx)
+        .filter(|s| !s.starts_with('-'))
+        .and_then(|s| s.parse::<f64>().ok())
+}
+
+/// Load a CLI target: a URL is fetched and its css/scripts inlined, a path
+/// is read as a file. Returns (display_name, html, fetch notes).
+fn load_source(arg: &str) -> Result<(String, String, Vec<String>), String> {
+    let is_url = arg.starts_with("http://") || arg.starts_with("https://");
+    if is_url {
+        match cornea::fetch::fetch_and_inline(arg) {
+            Ok(page) => Ok((arg.to_string(), page.html, page.notes)),
+            Err(e) => Err(e),
+        }
+    } else {
+        match std::fs::read_to_string(arg) {
+            Ok(h) => Ok((arg.to_string(), h, Vec::new())),
+            Err(e) => Err(format!("cannot read {}: {}", arg, e)),
+        }
+    }
+}
+
+fn maybe_run_js(html: &str, run_js: bool) -> (String, Vec<String>) {
+    if run_js {
+        cornea::js::execute_checked(html)
+    } else {
+        (html.to_string(), Vec::new())
+    }
+}
+
+/// Report warnings for a page plus any capture/script notes.
+fn merge_warnings(calc: &str, extra: &[String], _run_js: bool) -> Vec<String> {
+    let (_m, r) = analyze_vh(calc, layout::DEFAULT_WIDTH, 0.0);
+    let mut w = r.warnings;
+    w.extend(extra.iter().cloned());
+    w
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +325,22 @@ impl McpServer {
                 "layout.fidelity",
                 "Which CSS features are exact vs approximated in the engine.",
             ),
+            tool_def(
+                "layout.pageview",
+                "Structure summary of a page: semantic sections, hero block metrics (box, fold fit, heading, CTAs, contrast), and page stats.",
+            ),
+            tool_def(
+                "layout.scrape",
+                "Static extraction: title, meta, headings, links, images, tables, text.",
+            ),
+            tool_def(
+                "system.browsers",
+                "List browsers and default openers detected on this machine.",
+            ),
+            tool_def(
+                "system.open",
+                "Open a URL in a detected browser (or xdg-open / termux-open-url fallback). http and https only.",
+            ),
         ];
         json!({ "tools": tools })
     }
@@ -233,6 +352,23 @@ impl McpServer {
         if name == "layout.fidelity" {
             let (_status, payload) = rest::dispatch("fidelity", "");
             return json!({ "content": [ text_content(serde_json::to_string_pretty(&serde_json::from_str::<serde_json::Value>(&payload).unwrap()).unwrap()) ] });
+        }
+        if name == "system.browsers" {
+            let list = cornea::probe::detect();
+            return json!({ "content": [ text_content(serde_json::to_string_pretty(&list).unwrap()) ] });
+        }
+        if name == "system.open" {
+            let url = args.get("url").and_then(|u| u.as_str()).unwrap_or("");
+            let browser = args.get("browser").and_then(|b| b.as_str());
+            if url.trim().is_empty() {
+                return json!({ "content": [ text_content("error: missing 'url' argument") ], "isError": true });
+            }
+            return match cornea::probe::open_url(url, browser) {
+                Ok(msg) => json!({ "content": [ text_content(msg) ] }),
+                Err(e) => {
+                    json!({ "content": [ text_content(format!("error: {}", e)) ], "isError": true })
+                }
+            };
         }
 
         let html = args.get("html").and_then(|h| h.as_str()).unwrap_or("");
@@ -252,6 +388,8 @@ impl McpServer {
             "layout.overflow" => "overflow",
             "layout.contrast" => "contrast",
             "layout.quality" => "quality",
+            "layout.pageview" => "pageview",
+            "layout.scrape" => "scrape",
             _ => "",
         };
         let js = args.get("js").and_then(|j| j.as_bool()).unwrap_or(false);
@@ -276,7 +414,8 @@ fn tool_def(name: &str, description: &str) -> serde_json::Value {
             "url": { "type": "string", "description": "Alternative to html: fetch this live URL and inline its stylesheets and scripts first (opt in snapshot)" },
             "width": { "type": "number", "description": "Viewport width in px (default 360)" },
             "height": { "type": "number", "description": "Optional viewport height in px; positive values enable below the fold clipping detection (default 0 = unbounded page)" },
-            "js": { "type": "boolean", "description": "Execute inline scripts first (Phase A: DOM shim over mirrored static HTML)" }
+            "js": { "type": "boolean", "description": "Execute inline scripts first (Phase A: DOM shim over mirrored static HTML)" },
+            "browser": { "type": "string", "description": "system.open only: browser name or path fragment to prefer" }
         },
         "required": []
     });

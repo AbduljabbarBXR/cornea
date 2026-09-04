@@ -10,7 +10,8 @@ use serde_json::json;
 
 /// Valid endpoint names, used by MCP tool names, HTTP paths, and CLI.
 pub const ENDPOINTS: &[&str] = &[
-    "inspect", "overlaps", "overflow", "contrast", "quality", "fidelity",
+    "inspect", "overlaps", "overflow", "contrast", "quality", "fidelity", "pageview", "scrape",
+    "browsers", "open",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -38,6 +39,30 @@ pub fn dispatch(endpoint: &str, body: &str) -> (u16, String) {
     match endpoint {
         "fidelity" => (200, fidelity_json()),
         "health" => (200, json!({ "status": "ok" }).to_string()),
+        "browsers" => {
+            let list = crate::probe::detect();
+            (
+                200,
+                serde_json::to_string(&list).unwrap_or_else(|_| "[]".into()),
+            )
+        }
+        "open" => {
+            let v: serde_json::Value = match serde_json::from_str(body) {
+                Ok(v) => v,
+                Err(_) => {
+                    return (
+                        400,
+                        error_json("bad json: expected {\"url\": ..., \"browser\": ...}"),
+                    );
+                }
+            };
+            let url = v.get("url").and_then(|u| u.as_str()).unwrap_or("");
+            let browser = v.get("browser").and_then(|b| b.as_str());
+            match crate::probe::open_url(url, browser) {
+                Ok(msg) => (200, json!({ "ok": true, "detail": msg }).to_string()),
+                Err(e) => (400, error_json(&e)),
+            }
+        }
         _ => {
             let req: Request = match serde_json::from_str(body) {
                 Ok(r) => r,
@@ -96,6 +121,22 @@ pub fn run(
                 obj.insert("js_notes".into(), json!(report.js_notes));
             }
             q
+        }
+        "pageview" => {
+            let mut v = crate::report::page_view(&calc_html, width, height);
+            if let Some(stats) = v.get_mut("stats") {
+                if let Some(obj) = stats.as_object_mut() {
+                    obj.insert("warnings".into(), json!(report.warnings));
+                }
+            }
+            v
+        }
+        "scrape" => {
+            let mut v = crate::scrape::scrape(&calc_html);
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert("warnings".into(), json!(report.warnings));
+            }
+            v
         }
         _ => return (404, error_json(&format!("unknown endpoint: {}", endpoint))),
     };
@@ -213,6 +254,74 @@ mod tests {
     fn token_estimate_scales_with_size() {
         assert_eq!(est_tokens(0), 0);
         assert!(est_tokens(1000) > est_tokens(100));
+    }
+
+    #[test]
+    fn pageview_reports_hero_and_stats() {
+        let html = r#"<html><body>
+            <header>Site</header>
+            <section class="hero" style="background:#111"><h1>Big promise</h1><p>subline</p><button>Get started</button></section>
+            <main><h2>Features</h2><a href="/pricing">Pricing</a></main>
+            <footer>Fine print</footer>
+        </body></html>"#;
+        let (s, payload) = dispatch(
+            "pageview",
+            &format!(
+                r#"{{"html":{},"width":360}}"#,
+                serde_json::to_string(html).unwrap()
+            ),
+        );
+        assert_eq!(s, 200);
+        let v: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        let hero = &v["hero"];
+        assert!(hero.is_object(), "hero must be detected: {}", payload);
+        assert!(
+            hero["text"].as_str().unwrap_or("").contains("Big promise"),
+            "hero text: {}",
+            hero
+        );
+        let ctas = hero["ctas"].as_array().unwrap();
+        assert!(ctas.iter().any(|c| c["tag"] == "button"), "CTA in hero");
+        assert_eq!(
+            v["stats"]["headings"]["h1"],
+            json!(1),
+            "one h1: {}",
+            v["stats"]
+        );
+        assert_eq!(v["stats"]["images"], json!(0));
+        let sections = v["sections"].as_array().unwrap();
+        let kinds: Vec<&str> = sections.iter().filter_map(|s| s["kind"].as_str()).collect();
+        assert!(kinds.contains(&"header"));
+        assert!(kinds.contains(&"footer"));
+    }
+
+    #[test]
+    fn scrape_extracts_metadata_and_content() {
+        let html = r#"<html lang="en"><head><title>Docs</title>
+            <meta name="description" content="the docs page"></head>
+            <body><h1>Hello</h1><a href="/x">X</a><img src="/i.png" alt="pic"><table><tr><td>1</td></tr></table></body></html>"#;
+        let (s, payload) = dispatch(
+            "scrape",
+            &format!(r#"{{"html":{}}}"#, serde_json::to_string(html).unwrap()),
+        );
+        assert_eq!(s, 200);
+        let v: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(v["title"], "Docs");
+        assert_eq!(v["meta_description"], "the docs page");
+        assert_eq!(v["lang"], "en");
+        assert!(v["h1"][0] == "Hello");
+        assert_eq!(v["links"][0]["href"], "/x");
+        assert_eq!(v["images"][0]["alt"], "pic");
+        assert!(v["tables"] == 1);
+        assert!(v["text"].as_str().unwrap_or("").contains("Hello"));
+    }
+
+    #[test]
+    fn browsers_endpoint_returns_json_list() {
+        let (s, payload) = dispatch("browsers", "");
+        assert_eq!(s, 200);
+        let v: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert!(v.is_array(), "browsers is a list");
     }
 
     #[test]

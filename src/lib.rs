@@ -11,7 +11,10 @@ pub mod inspect;
 pub mod js;
 pub mod layout;
 pub mod model;
+pub mod probe;
+pub mod report;
 pub mod rest;
+pub mod scrape;
 
 use model::VisualModel;
 
