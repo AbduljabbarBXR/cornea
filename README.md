@@ -22,6 +22,13 @@ cargo build --release
 
 > Requires only `cargo`. No browser, no Node, no system dependencies. Builds fine on a phone-class device.
 
+**Or install the `cornea` command from npm (no Rust toolchain needed):**
+
+```bash
+npm install -g optrex   # provides the cornea command
+cornea --help
+```
+
 ---
 
 ## Visual guide: what Cornea does
@@ -331,7 +338,7 @@ cornea/
 
 ## Publishing
 
-Cornea is distributed three ways: **crates.io** (`cargo install cornea`), **GitHub Release + Homebrew** (`brew install`), and the **MCP Registry** (`layout.*` tools discoverable by agents). All are staged in this repo. See **[`PUBLISHING.md`](./PUBLISHING.md)** for the tokens, `server.json` manifest, and the release/tag recipe.
+Cornea is distributed four ways: **npm** (`npm install -g optrex`, gives the `cornea` command), **crates.io** (`cargo install cornea`), **GitHub Release + Homebrew** (`brew install`), and the **MCP Registry** (`layout.*` tools discoverable by agents). All are staged in this repo. See **[`PUBLISHING.md`](./PUBLISHING.md)** for the tokens, `server.json` manifest, and the release/tag recipe.
 
 mcp-name: io.github.AbduljabbarBXR/cornea
 

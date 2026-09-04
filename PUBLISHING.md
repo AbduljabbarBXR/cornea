@@ -1,14 +1,15 @@
 # Publishing Cornea
 
-Cornea is distributed through **three independent channels**, each installed from the terminal like any other tool. You can ship them together or one at a time.
+Cornea is distributed through **four independent channels**, each installed from the terminal like any other tool. You can ship them together or one at a time.
 
 | Channel | Result | One-line install |
 |---------|--------|------------------|
+| npm | `cornea` command wrapper | `npm install -g optrex` |
 | crates.io | Rust crate + binary | `cargo install cornea` / `cargo binstall cornea` |
 | GitHub Release + Homebrew | Fast native binaries | `brew install AbduljabbarBXR/tap/cornea` |
 | MCP Registry | Agents discover `layout.*` | `npx @smithery/cli install ...` |
 
-All three are driven by **tagging a version**. Everything is staged in this repo; publishing just needs tokens + a `git tag`.
+All four are driven by **tagging a version**. Everything is staged in this repo; publishing just needs tokens + a `git tag`.
 
 ---
 
