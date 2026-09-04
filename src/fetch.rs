@@ -19,6 +19,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Upper bound for the main document body.
@@ -27,6 +28,37 @@ const MAX_PAGE: usize = 8 * 1024 * 1024;
 const MAX_ASSET: usize = 4 * 1024 * 1024;
 /// Max assets inlined per page (stylesheet + script combined).
 const MAX_ASSETS: usize = 24;
+
+/// Either a plain TCP stream or a TLS session over one. Lets every reader
+/// helper below stay transport agnostic.
+enum Transport {
+    Plain(TcpStream),
+    Tls(rustls::StreamOwned<rustls::ClientConnection, TcpStream>),
+}
+
+impl Read for Transport {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Transport::Plain(s) => s.read(buf),
+            Transport::Tls(s) => s.read(buf),
+        }
+    }
+}
+
+impl Write for Transport {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Transport::Plain(s) => s.write(buf),
+            Transport::Tls(s) => s.write(buf),
+        }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Transport::Plain(s) => s.flush(),
+            Transport::Tls(s) => s.flush(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct FetchedPage {
@@ -90,21 +122,50 @@ fn parse_target(url: &str) -> Result<Target, String> {
     })
 }
 
+/// Default TLS client configuration trusting the public webpki root store.
+/// Built lazily once; rustls needs the ring provider installed process wide.
+pub fn default_tls_config() -> Result<Arc<rustls::ClientConfig>, String> {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+    let mut roots = rustls::RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    Ok(Arc::new(
+        rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    ))
+}
+
+/// Connect to the target and return a transport, plain or TLS with SNI.
+fn connect_transport(target: &Target) -> Result<Transport, String> {
+    let addr = format!("{}:{}", target.host, target.port);
+    let tcp = TcpStream::connect(&addr).map_err(|e| format!("connect {}: {}", addr, e))?;
+    tcp.set_read_timeout(Some(Duration::from_secs(15)))
+        .map_err(|e| format!("timeout setup: {}", e))?;
+    if target.scheme == "http" {
+        return Ok(Transport::Plain(tcp));
+    }
+    let config = default_tls_config()?;
+    let name = rustls::pki_types::ServerName::try_from(target.host.clone())
+        .map_err(|_| format!("invalid TLS hostname: {}", target.host))?;
+    let conn =
+        rustls::ClientConnection::new(config, name).map_err(|e| format!("tls setup: {}", e))?;
+    Ok(Transport::Tls(rustls::StreamOwned::new(conn, tcp)))
+}
+
 fn http_get(url: &str, cap: usize) -> Result<String, String> {
     let target = parse_target(url)?;
-    let addr = format!("{}:{}", target.host, target.port);
-    let mut stream = TcpStream::connect(&addr).map_err(|e| format!("connect {}: {}", addr, e))?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(15)))
-        .map_err(|e| format!("timeout setup: {}", e))?;
+    let mut transport = connect_transport(&target)?;
     let req = format!(
         "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: cornea\r\nAccept: */*\r\nConnection: close\r\n\r\n",
         target.path, target.host
     );
-    stream
+    transport
         .write_all(req.as_bytes())
         .map_err(|e| format!("write request: {}", e))?;
-    let mut reader = BufReader::new(stream);
+    let mut reader = BufReader::new(transport);
     let status_line =
         read_line_capped(&mut reader, 8 * 1024)?.ok_or_else(|| "empty response".to_string())?;
     let status_line = String::from_utf8_lossy(&status_line);
@@ -129,11 +190,6 @@ fn http_get(url: &str, cap: usize) -> Result<String, String> {
         }
     }
 
-    if (300..400).contains(&status) {
-        // handled as a normal body below: for Location we would re-request,
-        // but redirects are rare on dev servers; treat non-200 as an error
-        return Err(format!("HTTP status {}", status));
-    }
     if status != 200 {
         return Err(format!("HTTP status {}", status));
     }
