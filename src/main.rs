@@ -1,9 +1,9 @@
-use cornea::{analyze, inspect, layout};
+use cornea::{analyze, inspect, layout, rest};
 use serde::Serialize;
 use serde_json::json;
 use std::io::{BufRead, Write};
 
-const TOKENS_PER_BYTE: f64 = 0.27; // ~4 chars per token, JSON
+mod server_http;
 
 #[derive(Serialize)]
 struct CliOutput {
@@ -18,13 +18,25 @@ struct CliOutput {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
+    if let Some(i) = args.iter().position(|a| a == "--serve-http") {
+        let addr = args
+            .get(i + 1)
+            .cloned()
+            .unwrap_or_else(|| "127.0.0.1:8080".to_string());
+        if let Err(e) = server_http::serve(&addr) {
+            eprintln!("error: {}", e);
+            std::process::exit(1);
+        }
+        return;
+    }
+
     if args.iter().any(|a| a == "--serve") {
         serve_stdio();
         return;
     }
 
     if args.len() < 2 {
-        eprintln!("usage: cornea <file.html> [viewport_width] | --serve");
+        eprintln!("usage: cornea <file.html> [viewport_width] | --serve | --serve-http [addr]");
         std::process::exit(2);
     }
 
@@ -47,7 +59,7 @@ fn main() {
     // token estimate measured on the report only (the part an agent consumes)
     let report_json = serde_json::to_string(&report).unwrap();
     let json_bytes = report_json.len();
-    let est_tokens = (json_bytes as f64 * TOKENS_PER_BYTE).round() as usize;
+    let est_tokens = rest::est_tokens(json_bytes);
 
     let output = CliOutput {
         html_file: path.clone(),
@@ -174,7 +186,8 @@ impl McpServer {
         let args = params.get("arguments").cloned().unwrap_or(json!({}));
 
         if name == "layout.fidelity" {
-            return json!({ "content": [ text_content(serde_json::to_string_pretty(&fidelity()).unwrap()) ] });
+            let (_status, payload) = rest::dispatch("fidelity", "");
+            return json!({ "content": [ text_content(serde_json::to_string_pretty(&serde_json::from_str::<serde_json::Value>(&payload).unwrap()).unwrap()) ] });
         }
 
         let html = args.get("html").and_then(|h| h.as_str()).unwrap_or("");
@@ -186,18 +199,21 @@ impl McpServer {
             .and_then(|w| w.as_f64())
             .unwrap_or(layout::DEFAULT_WIDTH);
 
-        let (_model, report) = analyze(html, width);
-        let value = match name {
-            "layout.inspect" => serde_json::to_value(&report).unwrap_or(json!({})),
-            "layout.overlaps" => serde_json::to_value(&report.overlaps).unwrap_or(json!([])),
-            "layout.overflow" => serde_json::to_value(&report.overflows).unwrap_or(json!([])),
-            "layout.contrast" => serde_json::to_value(&report.contrast).unwrap_or(json!([])),
-            "layout.quality" => serde_json::to_value(&report.quality).unwrap_or(json!({})),
-            _ => {
-                return json!({ "content": [ text_content(format!("unknown tool: {}", name)) ], "isError": true });
-            }
+        // route through the same canonical dispatch as HTTP/CLI for identical output
+        let endpoint = match name {
+            "layout.inspect" => "inspect",
+            "layout.overlaps" => "overlaps",
+            "layout.overflow" => "overflow",
+            "layout.contrast" => "contrast",
+            "layout.quality" => "quality",
+            _ => "",
         };
-        json!({ "content": [ text_content(value.to_string()) ] })
+        let req = serde_json::json!({ "html": html, "width": width }).to_string();
+        let (status, payload) = rest::dispatch(endpoint, &req);
+        if endpoint.is_empty() || status >= 400 {
+            return json!({ "content": [ text_content(format!("error: {}", payload)) ], "isError": true });
+        }
+        json!({ "content": [ text_content(payload) ] })
     }
 }
 
@@ -227,12 +243,4 @@ fn error_json(id: Option<serde_json::Value>, code: i64, message: String) -> Stri
         resp["id"] = id;
     }
     resp.to_string()
-}
-
-fn fidelity() -> serde_json::Value {
-    json!({
-        "exact": ["box model", "block flow", "inline estimates", "flex row/column (no wrap)", "z-index", "visibility", "absolute/fixed left/top", "inline styles", "class/id/tag selectors", "WCAG contrast (hex + named)"],
-        "approximate": ["text width (glyph estimate, not shaping)", "flex-grow/flex-basis distribution", "grid", "media queries", "border-radius", "percentage widths"],
-        "not_supported": ["JS/DOM scripting", "external stylesheets (<link>)", "complex selectors (`, `, `+`, `>`, pseudo)"]
-    })
 }
