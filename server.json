@@ -7,12 +7,12 @@
  "url": "https://github.com/AbduljabbarBXR/cornea",
  "source": "github"
  },
- "version": "0.2.0",
+  "version": "0.2.1",
  "packages": [
  {
  "registryType": "cargo",
  "identifier": "cornea",
- "version": "0.2.0",
+  "version": "0.2.1",
  "transport": {
  "type": "stdio",
  "command": "cornea",
