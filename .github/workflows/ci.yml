@@ -46,9 +46,9 @@ jobs:
         run: |
           ./target/release/cornea tests/fixtures/sample-bugs.html 360 > /tmp/sample-report.json
           python3 -c "
-import json,sys
-r=json.load(open('/tmp/sample-report.json'))['report']
-assert r['overflows'], 'expected overflow'
-assert r['quality']['score'] < 1.0, 'sample has known issues'
-print(f'OK: {r[\"total_elements\"]} elements, quality={round(r[\"quality\"][\"score\"],2)}')
-"
+          import json,sys
+          r=json.load(open('/tmp/sample-report.json'))['report']
+          assert r['overflows'], 'expected overflow'
+          assert r['quality']['score'] < 1.0, 'sample has known issues'
+          print(f'OK: {r[\"total_elements\"]} elements, quality={round(r[\"quality\"][\"score\"],2)}')
+          "
