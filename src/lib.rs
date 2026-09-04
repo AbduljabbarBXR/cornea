@@ -7,6 +7,7 @@
 pub mod css;
 pub mod dom;
 pub mod inspect;
+pub mod js;
 pub mod layout;
 pub mod model;
 pub mod rest;

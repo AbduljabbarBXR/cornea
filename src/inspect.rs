@@ -40,6 +40,10 @@ pub struct InspectReport {
     pub overflows: Vec<Overflow>,
     pub contrast: Vec<ContrastResult>,
     pub quality: Quality,
+    /// Notes from the JS engine (--js/`js:true`): script errors, unsupported
+    /// async APIs, or the list of scripts that ran. Empty when JS is off.
+    #[serde(default)]
+    pub js_notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -319,6 +323,7 @@ pub fn inspect(model: &VisualModel) -> InspectReport {
         overflows: overflow(model),
         contrast: contrast(model),
         quality: quality(model),
+        js_notes: Vec::new(),
     }
 }
 

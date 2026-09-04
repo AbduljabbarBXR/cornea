@@ -20,6 +20,8 @@ pub struct Request {
     pub width: Option<f64>,
     #[serde(default)]
     pub full: bool,
+    #[serde(default)]
+    pub js: bool,
 }
 
 /// Handle one request against an endpoint. Returns `(http_status, json_payload)`.
@@ -34,23 +36,36 @@ pub fn dispatch(endpoint: &str, body: &str) -> (u16, String) {
                 Err(e) => return (400, error_json(&format!("bad json: {}", e))),
             };
             let width = req.width.unwrap_or(layout::DEFAULT_WIDTH);
-            run(endpoint, &req.html, width)
+            run(endpoint, &req.html, width, req.js)
         }
     }
 }
 
 /// Analyze and serialize a single endpoint; shared by MCP/HTTP/CLI/tests.
-pub fn run(endpoint: &str, html: &str, width: f64) -> (u16, String) {
+/// When `js` is true, inline scripts are executed first (boA + DOM shim).
+pub fn run(endpoint: &str, html: &str, width: f64, js: bool) -> (u16, String) {
     if html.trim().is_empty() {
         return (400, error_json("missing 'html' (the page source)"));
     }
-    let (_model, report) = analyze(html, width);
+    let (calc_html, js_notes) = if js {
+        crate::js::execute_checked(html)
+    } else {
+        (html.to_string(), Vec::new())
+    };
+    let (_model, mut report) = analyze(&calc_html, width);
+    report.js_notes = js_notes;
     let value = match endpoint {
         "inspect" => serde_json::to_value(&report).unwrap_or(json!({})),
         "overlaps" => serde_json::to_value(&report.overlaps).unwrap_or(json!([])),
         "overflow" => serde_json::to_value(&report.overflows).unwrap_or(json!([])),
         "contrast" => serde_json::to_value(&report.contrast).unwrap_or(json!([])),
-        "quality" => serde_json::to_value(&report.quality).unwrap_or(json!({})),
+        "quality" => {
+            let mut q = serde_json::to_value(&report.quality).unwrap_or(json!({}));
+            if let Some(obj) = q.as_object_mut() {
+                obj.insert("js_notes".into(), json!(report.js_notes));
+            }
+            q
+        }
         _ => return (404, error_json(&format!("unknown endpoint: {}", endpoint))),
     };
     (200, value.to_string())
@@ -61,7 +76,15 @@ pub fn fidelity() -> serde_json::Value {
     json!({
         "exact": ["box model", "block flow", "inline text estimates", "flex row/column (no wrap)", "z-index", "visibility", "absolute/fixed left/top", "inline styles", "class/id/tag selectors", "WCAG contrast (hex + named colors)"],
         "approximate": ["text glyph width (not shaping)", "flex-grow/flex-basis distribution", "grid", "media queries", "border-radius", "percentage widths"],
-        "deferred": ["JS/DOM scripting", "external stylesheets (<link>)", "complex selectors (combinators, pseudo)"]
+        "deferred": ["external stylesheets (<link>)", "complex selectors (combinators, pseudo)"],
+        "js": {
+            "engine": "boa",
+            "phase": "A",
+            "enabled": "opt-in via --js / js:true",
+            "dom_shim": "minimal (createElement, appendChild, setAttribute, innerHTML, textContent, style)",
+            "unsupported": ["setTimeout", "fetch", "XHR", "addEventListener events", "external <script src>", "React/SPA mounting (Phase B)"],
+            "limits": "script-built DOM is authoritative for <body>; static HTML is not yet mirrored into the shim"
+        }
     })
 }
 
