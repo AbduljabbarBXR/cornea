@@ -9,3 +9,7 @@ target/
 # Misc
 *.log
 .DS_Store
+
+# binaries downloaded by the npm wrapper postinstall, never commit
+npm/bin/cornea
+npm/bin/cornea.exe
