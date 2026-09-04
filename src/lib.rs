@@ -191,4 +191,84 @@ mod tests {
             "text over 60 chars should be omitted to keep the report lean"
         );
     }
+
+    fn contrast_row<'a>(
+        r: &'a inspect::InspectReport,
+        sel_suffix: &str,
+    ) -> Option<&'a inspect::ContrastResult> {
+        r.contrast.iter().find(|c| c.selector.ends_with(sel_suffix))
+    }
+
+    #[test]
+    fn contrast_uses_painted_background_from_ancestors() {
+        // white text on a black body: the p itself declares no background,
+        // so the engine must walk up to body instead of assuming white
+        let (_m, r) = analyze(
+            "<html><body style=\"background-color:#000000\"><p style=\"color:#ffffff\">hi</p></body></html>",
+            360.0,
+        );
+        let row = contrast_row(&r, ">p").expect("p contrast row present");
+        assert!(
+            row.pass_aa,
+            "white on inherited black must pass AA: {}",
+            row.note
+        );
+        assert_eq!(row.bg.as_deref(), Some("#000000"));
+    }
+
+    #[test]
+    fn contrast_inherits_text_color_from_ancestors() {
+        // body declares the text color; the p inherits it
+        let (_m, r) = analyze(
+            "<html><body style=\"color:#cccccc\"><p>x</p></body></html>",
+            360.0,
+        );
+        let row = contrast_row(&r, ">p").expect("p contrast row present");
+        assert_eq!(row.fg.as_deref(), Some("#cccccc"));
+        assert!(!row.pass_aa, "inherited light grey on white must fail AA");
+    }
+
+    #[test]
+    fn contrast_unresolved_color_never_passes() {
+        let (_m, r) = analyze(
+            "<html><body><p style=\"color:var(--brand)\">x</p></body></html>",
+            360.0,
+        );
+        let row = contrast_row(&r, ">p").expect("p contrast row present");
+        assert!(
+            !row.pass_aa,
+            "an unresolved color (var) must not silently pass AA"
+        );
+        assert!(row.ratio.is_none());
+        assert!(row.note.contains("unresolved"), "note: {}", row.note);
+    }
+
+    #[test]
+    fn contrast_parses_modern_color_formats() {
+        let (_m, r) = analyze(
+            "<html><body style=\"background:rgb(0,0,0)\"><p style=\"color:rgba(255,255,255,1)\">a</p><p style=\"color:hsl(0,0%,90%)\">b</p></body></html>",
+            360.0,
+        );
+        let rows: Vec<&inspect::ContrastResult> = r
+            .contrast
+            .iter()
+            .filter(|c| c.selector.ends_with(">p"))
+            .collect();
+        assert_eq!(
+            rows.len(),
+            2,
+            "both p elements judged against body background"
+        );
+        let row = |fg: &str| rows.iter().find(|c| c.fg.as_deref() == Some(fg)).expect(fg);
+        let white = row("rgba(255,255,255,1)");
+        assert_eq!(
+            white.ratio.map(|v| v.round()),
+            Some(21.0),
+            "white on black is 21:1"
+        );
+        assert!(white.pass_aa);
+        let grey = row("hsl(0,0%,90%)");
+        assert!(grey.ratio.unwrap() > 1.0);
+        assert!(grey.pass_aa, "90% grey on black passes AA");
+    }
 }

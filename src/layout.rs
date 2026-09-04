@@ -453,7 +453,10 @@ impl<'a> LayoutEngine<'a> {
             content,
             z,
             fg: s.get("color").map(|v| v.to_string()),
-            bg: s.get("background-color").map(|v| v.to_string()),
+            bg: s
+                .get("background-color")
+                .or_else(|| s.get("background"))
+                .map(|v| v.to_string()),
             text: text_if_small(el),
             fidelity: "exact".into(),
         });
