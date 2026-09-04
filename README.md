@@ -333,6 +333,8 @@ cornea/
 
 Cornea is distributed three ways: **crates.io** (`cargo install cornea`), **GitHub Release + Homebrew** (`brew install`), and the **MCP Registry** (`layout.*` tools discoverable by agents). All are staged in this repo. See **[`PUBLISHING.md`](./PUBLISHING.md)** for the tokens, `server.json` manifest, and the release/tag recipe.
 
+mcp-name: io.github.AbduljabbarBXR/cornea
+
 ## License
 
 MIT. See [`LICENSE`](./LICENSE).
