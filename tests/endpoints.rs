@@ -294,6 +294,51 @@ fn cli_fetch_unreachable_url_fails_cleanly() {
 }
 
 #[test]
+fn cli_capture_without_browser_falls_back_to_http() {
+    let port = start_capture_origin();
+    let url = format!("http://127.0.0.1:{}/", port);
+    // this machine has no chrome like binary, so --capture must degrade to
+    // plain http capture and say so in the warnings instead of failing
+    let out = bin()
+        .arg(&url)
+        .arg("360")
+        .arg("--capture")
+        .output()
+        .expect("run CLI with capture flag");
+    assert!(
+        out.status.success(),
+        "capture fallback must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(out.stdout).unwrap()).unwrap();
+    let joined: Vec<String> = report["report"]["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w.as_str().unwrap_or("").to_string())
+        .collect();
+    assert!(
+        joined
+            .iter()
+            .any(|w| w.contains("headless capture unavailable")),
+        "fallback must be reported: {:?}",
+        joined
+    );
+    // and the fallback still applied the linked stylesheet
+    let row = report["report"]["contrast"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["selector"].as_str().unwrap_or("").ends_with(">p"))
+        .expect("p contrast row");
+    assert_eq!(
+        row["bg"], "#000000",
+        "fallback http capture must inline css"
+    );
+}
+
+#[test]
 fn cli_height_flag_detects_below_fold_clipping() {
     let dir = std::env::temp_dir();
     let path = dir.join("cornea_height_e2e.html");

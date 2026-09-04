@@ -80,7 +80,8 @@ fn main() {
             let w = num_arg(&args, 3).unwrap_or(layout::DEFAULT_WIDTH);
             let h = num_arg(&args, 4).unwrap_or(0.0);
             let run_js = args.iter().any(|a| a == "--js");
-            match load_source(target) {
+            let capture = args.iter().any(|a| a == "--capture");
+            match load_target(target, capture) {
                 Ok((_name, html, notes)) => {
                     let (calc, _js) = maybe_run_js(&html, run_js);
                     let mut view = cornea::report::page_view(&calc, w, h);
@@ -107,7 +108,8 @@ fn main() {
                 std::process::exit(2);
             };
             let run_js = args.iter().any(|a| a == "--js");
-            match load_source(target) {
+            let capture = args.iter().any(|a| a == "--capture");
+            match load_target(target, capture) {
                 Ok((_name, html, _notes)) => {
                     let (calc, _js) = maybe_run_js(&html, run_js);
                     println!(
@@ -137,13 +139,14 @@ fn main() {
         .unwrap_or(0.0);
     let run_js = args.iter().any(|a| a == "--js");
 
-    let (display_name, html, fetch_notes) = match load_source(&arg1) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let (display_name, html, fetch_notes) =
+        match load_target(&arg1, args.iter().any(|a| a == "--capture")) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("error: {}", e);
+                std::process::exit(1);
+            }
+        };
 
     let (calc_html, js_notes) = maybe_run_js(&html, run_js);
 
@@ -178,19 +181,40 @@ fn num_arg(args: &[String], idx: usize) -> Option<f64> {
         .and_then(|s| s.parse::<f64>().ok())
 }
 
-/// Load a CLI target: a URL is fetched and its css/scripts inlined, a path
-/// is read as a file. Returns (display_name, html, fetch notes).
-fn load_source(arg: &str) -> Result<(String, String, Vec<String>), String> {
+/// Load a CLI target. A URL is fetched and its css/scripts inlined, or when
+/// `want_capture` is set, rendered in a detected headless browser first with
+/// graceful fallback to plain http capture. A path is read as a file.
+/// Returns (display_name, html, notes).
+fn load_target(arg: &str, want_capture: bool) -> Result<(String, String, Vec<String>), String> {
     let is_url = arg.starts_with("http://") || arg.starts_with("https://");
-    if is_url {
+    if !is_url {
+        return match std::fs::read_to_string(arg) {
+            Ok(h) => Ok((arg.to_string(), h, Vec::new())),
+            Err(e) => Err(format!("cannot read {}: {}", arg, e)),
+        };
+    }
+    if want_capture {
+        match cornea::capture::capture_url(arg) {
+            Ok((page, _name)) => Ok((arg.to_string(), page.html, page.notes)),
+            Err(headless_err) => match cornea::fetch::fetch_and_inline(arg) {
+                Ok(page) => {
+                    let mut notes = page.notes;
+                    notes.insert(
+                        0,
+                        format!(
+                            "headless capture unavailable ({}), used plain http capture",
+                            headless_err
+                        ),
+                    );
+                    Ok((arg.to_string(), page.html, notes))
+                }
+                Err(e) => Err(e),
+            },
+        }
+    } else {
         match cornea::fetch::fetch_and_inline(arg) {
             Ok(page) => Ok((arg.to_string(), page.html, page.notes)),
             Err(e) => Err(e),
-        }
-    } else {
-        match std::fs::read_to_string(arg) {
-            Ok(h) => Ok((arg.to_string(), h, Vec::new())),
-            Err(e) => Err(format!("cannot read {}: {}", arg, e)),
         }
     }
 }
@@ -394,8 +418,12 @@ impl McpServer {
         };
         let js = args.get("js").and_then(|j| j.as_bool()).unwrap_or(false);
         let height = args.get("height").and_then(|h| h.as_f64()).unwrap_or(0.0);
+        let capture = args
+            .get("capture")
+            .and_then(|c| c.as_bool())
+            .unwrap_or(false);
         let req = serde_json::json!({
-            "html": html, "url": url, "width": width, "height": height, "js": js
+            "html": html, "url": url, "width": width, "height": height, "js": js, "capture": capture
         })
         .to_string();
         let (status, payload) = rest::dispatch(endpoint, &req);
@@ -415,6 +443,7 @@ fn tool_def(name: &str, description: &str) -> serde_json::Value {
             "width": { "type": "number", "description": "Viewport width in px (default 360)" },
             "height": { "type": "number", "description": "Optional viewport height in px; positive values enable below the fold clipping detection (default 0 = unbounded page)" },
             "js": { "type": "boolean", "description": "Execute inline scripts first (Phase A: DOM shim over mirrored static HTML)" },
+            "capture": { "type": "boolean", "description": "With a URL: render in a detected headless chrome like browser first (React, JS, media queries), fall back to plain http capture with a note when none exists" },
             "browser": { "type": "string", "description": "system.open only: browser name or path fragment to prefer" }
         },
         "required": []

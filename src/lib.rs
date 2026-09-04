@@ -4,6 +4,7 @@
 //! geometry model, and derive inspection conclusions (overlap, overflow,
 //! contrast, quality).
 
+pub mod capture;
 pub mod css;
 pub mod dom;
 pub mod fetch;

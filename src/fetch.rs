@@ -66,6 +66,19 @@ pub struct FetchedPage {
     pub notes: Vec<String>,
 }
 
+/// Inline a DOM dump (from headless capture or any external renderer) exactly
+/// like a fetched page: external css and scripts are fetched relative to the
+/// URL and inlined so the deterministic engine sees the rendered reality.
+pub fn inline_dom(url: &str, dom_html: String) -> Result<FetchedPage, String> {
+    let target = parse_target(url)?;
+    let mut page = FetchedPage {
+        html: dom_html,
+        notes: Vec::new(),
+    };
+    inline_assets(&target, &mut page);
+    Ok(page)
+}
+
 /// A parsed absolute URL: scheme, host, port, path (query stripped).
 struct Target {
     scheme: String,

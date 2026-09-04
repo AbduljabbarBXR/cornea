@@ -4,7 +4,7 @@
 //! single `dispatch` function so behavior is identical everywhere and is
 //! directly testable end-to-end.
 
-use crate::{analyze_vh, fetch, layout};
+use crate::{analyze_vh, capture, fetch, layout};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -31,6 +31,12 @@ pub struct Request {
     pub full: bool,
     #[serde(default)]
     pub js: bool,
+    /// When true and a URL is given, render the page in a detected headless
+    /// chrome like browser first (JavaScript, React, media queries) and feed
+    /// the dumped DOM to the engine. Falls back to plain http capture with a
+    /// note when no headless browser exists.
+    #[serde(default)]
+    pub capture: bool,
 }
 
 /// Handle one request against an endpoint. Returns `(http_status, json_payload)`.
@@ -70,13 +76,39 @@ pub fn dispatch(endpoint: &str, body: &str) -> (u16, String) {
             };
             let width = req.width.unwrap_or(layout::DEFAULT_WIDTH);
             let height = req.height.unwrap_or(0.0);
-            // url replaces html when html is absent: fetch + inline first
+            // url replaces html when html is absent: fetch + inline first,
+            // optionally through a headless browser render first
             if req.html.trim().is_empty() {
                 match req.url.as_deref() {
-                    Some(u) if !u.trim().is_empty() => match fetch::fetch_and_inline(u) {
-                        Ok(page) => run(endpoint, &page.html, width, height, req.js, &page.notes),
-                        Err(e) => (502, error_json(&format!("cannot fetch {}: {}", u, e))),
-                    },
+                    Some(u) if !u.trim().is_empty() => {
+                        let res = if req.capture {
+                            capture::capture_url(u).map(|(page, _name)| page)
+                        } else {
+                            fetch::fetch_and_inline(u)
+                        };
+                        match res {
+                            Ok(page) => {
+                                run(endpoint, &page.html, width, height, req.js, &page.notes)
+                            }
+                            Err(headless_err) if req.capture => {
+                                // graceful fallback: plain http capture with a note
+                                match fetch::fetch_and_inline(u) {
+                                    Ok(page) => {
+                                        let mut notes = page.notes;
+                                        notes.insert(
+                                            0,
+                                            format!("headless capture unavailable ({}), used plain http capture", headless_err),
+                                        );
+                                        run(endpoint, &page.html, width, height, req.js, &notes)
+                                    }
+                                    Err(fe) => {
+                                        (502, error_json(&format!("cannot fetch {}: {}", u, fe)))
+                                    }
+                                }
+                            }
+                            Err(e) => (502, error_json(&format!("cannot fetch {}: {}", u, e))),
+                        }
+                    }
                     _ => (400, error_json("missing 'html' (the page source) or 'url'")),
                 }
             } else {
