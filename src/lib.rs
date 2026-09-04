@@ -9,6 +9,7 @@ pub mod dom;
 pub mod inspect;
 pub mod layout;
 pub mod model;
+pub mod rest;
 
 use model::VisualModel;
 
