@@ -37,6 +37,18 @@ fn cli_without_args_shows_usage() {
 }
 
 #[test]
+fn cli_version_flag_reports_version() {
+    let out = bin().args(["--version"]).output().expect("run --version");
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).expect("utf8 stdout");
+    assert!(
+        stdout.starts_with("cornea "),
+        "expected 'cornea <version>', got {:?}",
+        stdout
+    );
+}
+
+#[test]
 fn mcp_initialize_and_tools_list() {
     let mut child = bin()
         .arg("--serve")

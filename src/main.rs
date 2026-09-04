@@ -18,6 +18,11 @@ struct CliOutput {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("cornea {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+
     if let Some(i) = args.iter().position(|a| a == "--serve-http") {
         let addr = args
             .get(i + 1)
@@ -37,7 +42,9 @@ fn main() {
     }
 
     if args.len() < 2 {
-        eprintln!("usage: cornea <file.html> [viewport_width] | --serve | --serve-http [addr]");
+        eprintln!(
+            "usage: cornea <file.html> [viewport_width] | --serve | --serve-http [addr] | --version"
+        );
         std::process::exit(2);
     }
 
