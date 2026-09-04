@@ -114,10 +114,7 @@ fn http_get(url: &str, cap: usize) -> Result<String, String> {
 
     let mut content_length: Option<usize> = None;
     let mut chunked = false;
-    loop {
-        let Some(line) = read_line_capped(&mut reader, 8 * 1024)? else {
-            break;
-        };
+    while let Some(line) = read_line_capped(&mut reader, 8 * 1024)? {
         let line = String::from_utf8_lossy(&line);
         let line = line.trim_end();
         if line.is_empty() {
@@ -185,10 +182,7 @@ fn read_chunked<R: BufRead>(r: &mut R, cap: usize) -> Result<Vec<u8>, String> {
             .map_err(|_| format!("bad chunk size: {:?}", size_str))?;
         if size == 0 {
             // trailers until blank line, then done
-            loop {
-                let Some(t) = read_line_capped(r, 8 * 1024)? else {
-                    break;
-                };
+            while let Some(t) = read_line_capped(r, 8 * 1024)? {
                 if t.is_empty() {
                     break;
                 }
@@ -305,13 +299,13 @@ fn inline_assets(target: &Target, page: &mut FetchedPage) {
                 }
                 // skip past the open tag; find matching close if script/link pair
                 let after_open = &page.html[open_end + 1..];
-                if is_external_script {
-                    if let Some(close) = after_open.to_ascii_lowercase().find("</script") {
-                        // skip past the close tag, dropping the original body
-                        cursor = open_end + 1 + close + "</script".len() + 1;
-                        lower_rest = &lower[cursor.min(lower.len())..];
-                        continue;
-                    }
+                if is_external_script
+                    && let Some(close) = after_open.to_ascii_lowercase().find("</script")
+                {
+                    // skip past the close tag, dropping the original body
+                    cursor = open_end + 1 + close + "</script".len() + 1;
+                    lower_rest = &lower[cursor.min(lower.len())..];
+                    continue;
                 }
                 cursor = open_end + 1;
             } else {
@@ -366,11 +360,11 @@ fn extract_attr(open_lower: &str, name: &str) -> Option<String> {
     while let Some(idx) = search.find(&name) {
         let before = &search[..idx];
         // word boundary: previous char must not be an ident char
-        if let Some(prev) = before.chars().last() {
-            if prev.is_ascii_alphanumeric() || prev == '-' || prev == '_' {
-                search = &search[idx + name.len()..];
-                continue;
-            }
+        if let Some(prev) = before.chars().last()
+            && (prev.is_ascii_alphanumeric() || prev == '-' || prev == '_')
+        {
+            search = &search[idx + name.len()..];
+            continue;
         }
         let after = &search[idx + name.len()..];
         let after = after.trim_start();
@@ -422,7 +416,7 @@ fn resolve(target: &Target, href: &str) -> String {
         Some(i) => &target.path[..=i],
         None => "/",
     };
-    let mut combined = format!("{}{}", dir, h);
+    let combined = format!("{}{}", dir, h);
     let mut segs: Vec<String> = Vec::new();
     for seg in combined.split('/') {
         match seg {

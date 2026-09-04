@@ -102,8 +102,7 @@ pub fn overlaps(model: &VisualModel) -> Vec<Overlap> {
     for i in 0..vis.len() {
         let a = vis[i];
         let a_right = a.bbox.x + a.bbox.w;
-        for j in (i + 1)..vis.len() {
-            let b = vis[j];
+        for b in vis.iter().skip(i + 1) {
             if b.bbox.x >= a_right {
                 break; // sorted: no later box can reach a
             }
