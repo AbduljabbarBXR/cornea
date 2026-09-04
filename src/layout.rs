@@ -160,6 +160,9 @@ impl<'a> LayoutEngine<'a> {
     #[allow(clippy::ptr_arg)] // selector path builder takes &mut String
     fn block_flow_children(&mut self, el: &ElNode, content: Rect, sel: &mut String) {
         let mut cursor = content.y;
+        let mut x_cursor = content.x;
+        let mut line_top = content.y;
+        let mut line_height = 0.0;
         for child in el.children.iter() {
             let Node::Elem(c) = child else { continue };
             // absolutely/fixed-positioned children are taken out of flow
@@ -184,14 +187,29 @@ impl<'a> LayoutEngine<'a> {
                     );
                 }
                 Display::Inline => {
+                    // a block child ended the previous line: start a fresh line
+                    if x_cursor == content.x && line_height == 0.0 {
+                        line_top = line_top.max(cursor);
+                    }
                     let m = self.inline_measure(c);
-                    let r = Rect::new(content.x, cursor, m.w, m.h);
+                    let needs_wrap = x_cursor + m.w > content.x + content.w && x_cursor > content.x;
+                    if needs_wrap {
+                        line_top += line_height;
+                        x_cursor = content.x;
+                        line_height = 0.0;
+                    }
+                    let r = Rect::new(x_cursor, line_top, m.w, m.h);
                     let s = function_sel(sel, c);
                     let z = self.z_of(c, 0);
                     self.push(c, r, &s, Display::Inline, true, z, true, el.id);
-                    cursor += m.h;
+                    x_cursor += m.w;
+                    line_height = line_height.max(m.h);
                 }
                 _ => {
+                    // commit any pending inline line before the block child
+                    if line_height > 0.0 {
+                        cursor = (line_top + line_height).max(cursor);
+                    }
                     self.layout_block(
                         c,
                         Rect::new(content.x, cursor, content.w, content.h),
@@ -201,6 +219,9 @@ impl<'a> LayoutEngine<'a> {
                     if let Some(last) = self.elements.iter().rev().find(|e| e.id == c.id) {
                         cursor = last.bbox.y + last.bbox.h;
                     }
+                    x_cursor = content.x;
+                    line_height = 0.0;
+                    line_top = cursor;
                 }
             }
         }
@@ -228,8 +249,6 @@ impl<'a> LayoutEngine<'a> {
 
     #[allow(clippy::ptr_arg)] // selector path builder takes &mut String
     fn layout_flex_children(&mut self, el: &ElNode, content: Rect, sel: &mut String) {
-        let is_row = self.display_of(el) != Display::FlexCol;
-        let _ = is_row;
         let kids: Vec<&ElNode> = el
             .children
             .iter()
