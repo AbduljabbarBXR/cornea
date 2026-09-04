@@ -2,7 +2,7 @@
  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
  "name": "io.github.AbduljabbarBXR/cornea",
  "title": "Cornea, deterministic visual inspection",
- "description": "Deterministic visual inspection of pages (overlap, overflow, contrast, quality) as native agent tools. Token-cheap, no Chromium.",
+  "description": "Deterministic visual inspection for AI agents. Overlap, overflow, contrast, quality.",
  "repository": {
  "url": "https://github.com/AbduljabbarBXR/cornea",
  "source": "github"
