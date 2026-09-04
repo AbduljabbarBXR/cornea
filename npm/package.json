@@ -3,7 +3,7 @@
   "version": "0.2.2",
   "description": "Cornea installer. Downloads the prebuilt Cornea binary for your platform and exposes the cornea command. Deterministic visual inspection for AI agents.",
   "bin": {
-    "cornea": "./bin/cornea.js"
+    "cornea": "bin/cornea.js"
   },
   "scripts": {
     "postinstall": "node ./install.js",
