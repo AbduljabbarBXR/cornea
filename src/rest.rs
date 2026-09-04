@@ -4,7 +4,7 @@
 //! single `dispatch` function so behavior is identical everywhere and is
 //! directly testable end-to-end.
 
-use crate::{analyze, layout};
+use crate::{analyze_vh, layout};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -18,6 +18,8 @@ pub struct Request {
     pub html: String,
     #[serde(default)]
     pub width: Option<f64>,
+    #[serde(default)]
+    pub height: Option<f64>,
     #[serde(default)]
     pub full: bool,
     #[serde(default)]
@@ -36,14 +38,17 @@ pub fn dispatch(endpoint: &str, body: &str) -> (u16, String) {
                 Err(e) => return (400, error_json(&format!("bad json: {}", e))),
             };
             let width = req.width.unwrap_or(layout::DEFAULT_WIDTH);
-            run(endpoint, &req.html, width, req.js)
+            let height = req.height.unwrap_or(0.0);
+            run(endpoint, &req.html, width, height, req.js)
         }
     }
 }
 
 /// Analyze and serialize a single endpoint; shared by MCP/HTTP/CLI/tests.
 /// When `js` is true, inline scripts are executed first (boA + DOM shim).
-pub fn run(endpoint: &str, html: &str, width: f64, js: bool) -> (u16, String) {
+/// `height` of 0 means an unbounded scrolling page; a positive height enables
+/// below-the-fold clipping detection.
+pub fn run(endpoint: &str, html: &str, width: f64, height: f64, js: bool) -> (u16, String) {
     if html.trim().is_empty() {
         return (400, error_json("missing 'html' (the page source)"));
     }
@@ -52,7 +57,7 @@ pub fn run(endpoint: &str, html: &str, width: f64, js: bool) -> (u16, String) {
     } else {
         (html.to_string(), Vec::new())
     };
-    let (_model, mut report) = analyze(&calc_html, width);
+    let (_model, mut report) = analyze_vh(&calc_html, width, height);
     report.js_notes = js_notes;
     let value = match endpoint {
         "inspect" => serde_json::to_value(&report).unwrap_or(json!({})),
@@ -182,5 +187,42 @@ mod tests {
     fn token_estimate_scales_with_size() {
         assert_eq!(est_tokens(0), 0);
         assert!(est_tokens(1000) > est_tokens(100));
+    }
+
+    #[test]
+    fn height_enables_below_fold_clipping_detection() {
+        let html = "<html><body><div style=\"width:50;height:500\">tall</div></body></html>";
+        let (s0, p0) = dispatch(
+            "overflow",
+            &format!(
+                r#"{{"html":{},"width":360}}"#,
+                serde_json::to_string(html).unwrap()
+            ),
+        );
+        assert_eq!(s0, 200);
+        let no_height: serde_json::Value = serde_json::from_str(&p0).unwrap();
+        assert!(
+            no_height.as_array().unwrap().is_empty(),
+            "without a height the page is unbounded, nothing clips"
+        );
+        let (s1, p1) = dispatch(
+            "overflow",
+            &format!(
+                r#"{{"html":{},"width":360,"height":100}}"#,
+                serde_json::to_string(html).unwrap()
+            ),
+        );
+        assert_eq!(s1, 200);
+        let with_height: serde_json::Value = serde_json::from_str(&p1).unwrap();
+        assert!(
+            with_height
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|o| o["kind"] == "clipped"
+                    && o["detail"].as_str().unwrap_or("").contains("500")),
+            "a 500px tall element inside a 100px viewport must be clipped: {}",
+            p1
+        );
     }
 }

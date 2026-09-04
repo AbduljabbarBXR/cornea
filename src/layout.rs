@@ -50,8 +50,16 @@ impl<'a> LayoutEngine<'a> {
         }
     }
 
-    pub fn run(mut self, viewport_w: f64) -> VisualModel {
-        let root_box = Rect::new(0.0, 0.0, viewport_w, 0.0);
+    pub fn run(self, viewport_w: f64) -> VisualModel {
+        self.run_with_height(viewport_w, 0.0)
+    }
+
+    /// `viewport_h` of 0 (default) means an unbounded scrolling page: only
+    /// horizontal/left clipping is judged. A positive value emulates a fixed
+    /// viewport (screenshot frame, iframe, mail client) and enables the
+    /// below-the-fold clipping check.
+    pub fn run_with_height(mut self, viewport_w: f64, viewport_h: f64) -> VisualModel {
+        let root_box = Rect::new(0.0, 0.0, viewport_w, viewport_h);
         self.elements.push(ElementView {
             id: 0,
             parent: 0,

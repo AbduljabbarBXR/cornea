@@ -194,3 +194,54 @@ fn cli_js_flag_runs_inline_script_and_detects_built_overlap() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn cli_height_flag_detects_below_fold_clipping() {
+    let dir = std::env::temp_dir();
+    let path = dir.join("cornea_height_e2e.html");
+    std::fs::write(
+        &path,
+        "<html><body><div style=\"width:50;height:500\">tall</div></body></html>",
+    )
+    .expect("write temp page");
+    // unbounded page (no height): nothing clips vertically
+    let plain = bin().arg(&path).arg("360").output().expect("run CLI");
+    assert!(plain.status.success());
+    let plain_report: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(plain.stdout).unwrap()).unwrap();
+    assert!(
+        !plain_report["report"]["overflows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|o| o["detail"]
+                .as_str()
+                .unwrap_or("")
+                .contains("exceeds viewport height")),
+        "no height means an unbounded page"
+    );
+    // fixed 100px viewport: the 500px tall element clips below the fold
+    let folded = bin()
+        .arg(&path)
+        .arg("360")
+        .arg("100")
+        .output()
+        .expect("run CLI with height");
+    assert!(folded.status.success());
+    let folded_report: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(folded.stdout).unwrap()).unwrap();
+    assert!(
+        folded_report["report"]["overflows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|o| o["kind"] == "clipped"
+                && o["detail"]
+                    .as_str()
+                    .unwrap_or("")
+                    .contains("exceeds viewport height 100")),
+        "fixed viewport must flag the below fold element: {}",
+        folded_report
+    );
+    let _ = std::fs::remove_file(&path);
+}

@@ -15,17 +15,34 @@ pub mod rest;
 use model::VisualModel;
 
 /// Full pipeline: HTML + viewport width -> visual model.
+/// Viewport height 0 (default) means an unbounded scrolling page.
 pub fn build_model(html: &str, viewport_w: f64) -> VisualModel {
+    build_model_vh(html, viewport_w, 0.0)
+}
+
+/// Full pipeline with an explicit viewport height. A positive height enables
+/// the below-the-fold clipping check; 0 keeps the unbounded-page semantics.
+pub fn build_model_vh(html: &str, viewport_w: f64, viewport_h: f64) -> VisualModel {
     let parsed = dom::parse(html);
     let sheet = css::CssSheet::from_html(html);
     let engine = layout::LayoutEngine::new(&parsed.root, &sheet);
-    engine.run(viewport_w)
+    engine.run_with_height(viewport_w, viewport_h)
 }
 
 /// Full pipeline producing both the visual model and the inspection report.
 pub fn analyze(html: &str, viewport_w: f64) -> (VisualModel, inspect::InspectReport) {
-    let model = build_model(html, viewport_w);
-    let report = inspect::inspect(&model);
+    analyze_vh(html, viewport_w, 0.0)
+}
+
+/// Analyze with an explicit viewport height (see `build_model_vh`).
+pub fn analyze_vh(
+    html: &str,
+    viewport_w: f64,
+    viewport_h: f64,
+) -> (VisualModel, inspect::InspectReport) {
+    let model = build_model_vh(html, viewport_w, viewport_h);
+    let mut report = inspect::inspect(&model);
+    report.warnings = inspect::warnings(html, &report);
     (model, report)
 }
 
@@ -270,5 +287,43 @@ mod tests {
         let grey = row("hsl(0,0%,90%)");
         assert!(grey.ratio.unwrap() > 1.0);
         assert!(grey.pass_aa, "90% grey on black passes AA");
+    }
+
+    #[test]
+    fn report_carries_page_level_warnings() {
+        // a real-world page shape: external css + external script + media
+        // queries + an unresolved var color; the report must say so itself
+        let html = r#"<html><head>
+            <link rel="stylesheet" href="/app.css">
+            <style>@media (max-width: 600px) { .x { width: 50%; } }</style>
+        </head><body>
+            <script src="/bundle.js"></script>
+            <p style="color:var(--brand)">hi</p>
+        </body></html>"#;
+        let (_m, r) = analyze(html, 360.0);
+        let joined = r.warnings.join("\n");
+        assert!(
+            joined.contains("external stylesheet"),
+            "warnings must flag <link> css: {}",
+            joined
+        );
+        assert!(
+            joined.contains("<script src>"),
+            "warnings must flag external scripts: {}",
+            joined
+        );
+        assert!(
+            joined.contains("@media"),
+            "warnings must flag media queries: {}",
+            joined
+        );
+        assert!(
+            joined.contains("unresolved color"),
+            "warnings must flag unresolved colors: {}",
+            joined
+        );
+        // a clean page stays quiet
+        let (_m2, r2) = analyze("<html><body><p>plain</p></body></html>", 360.0);
+        assert!(r2.warnings.is_empty(), "clean page must have no warnings");
     }
 }

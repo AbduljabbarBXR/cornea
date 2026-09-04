@@ -44,6 +44,10 @@ pub struct InspectReport {
     /// async APIs, or the list of scripts that ran. Empty when JS is off.
     #[serde(default)]
     pub js_notes: Vec<String>,
+    /// Page level honesty: things the engine saw but did not (or could not)
+    /// apply, so a consumer never mistakes an approximation for a verdict.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -614,7 +618,76 @@ pub fn inspect(model: &VisualModel) -> InspectReport {
         contrast: contrast(model),
         quality: quality(model),
         js_notes: Vec::new(),
+        warnings: Vec::new(),
     }
+}
+
+/// Derive page level warnings from the analyzed HTML and its report: sources
+/// the engine deliberately does not apply (external stylesheets, external
+/// scripts, media queries) and values it could not resolve. These make the
+/// report carry its own honesty instead of hiding caveats in layout.fidelity.
+pub fn warnings(html: &str, report: &InspectReport) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let lower = html.to_ascii_lowercase();
+
+    let link_stylesheets = count_open_tags(&lower, "<link", |open| {
+        open.contains("stylesheet") || open.contains("text/css")
+    });
+    if link_stylesheets > 0 {
+        out.push(format!(
+            "{} external stylesheet <link> tag(s) present; their CSS is not applied",
+            link_stylesheets
+        ));
+    }
+    let ext_scripts = count_open_tags(&lower, "<script", |open| open.contains("src"));
+    if ext_scripts > 0 {
+        out.push(format!(
+            "{} external <script src> not executed (Phase A runs inline scripts only)",
+            ext_scripts
+        ));
+    }
+    // count style blocks carrying @media rules (case handled by lowercase)
+    let mut media = 0usize;
+    let mut rest = &lower[..];
+    while let Some(start) = rest.find("<style") {
+        let after = &rest[start + 6..];
+        let Some(gt) = after.find('>') else { break };
+        let content = &after[gt + 1..];
+        let close = content.find("</style").unwrap_or(content.len());
+        media += content[..close].matches("@media").count();
+        rest = &content[close..];
+    }
+    if media > 0 {
+        out.push(format!(
+            "{} @media rule(s) present; media queries are not evaluated",
+            media
+        ));
+    }
+    let unresolved = report.contrast.iter().filter(|c| c.ratio.is_none()).count();
+    if unresolved > 0 {
+        out.push(format!(
+            "{} unresolved color value(s); their contrast is not certified",
+            unresolved
+        ));
+    }
+    out
+}
+
+/// Count open tags matching `open_tag` whose attributes (the text from the tag
+/// name to the closing `>`) satisfy `pred`. Deterministic, ASCII-safe scan.
+fn count_open_tags(lower: &str, open_tag: &str, pred: impl Fn(&str) -> bool) -> usize {
+    let mut n = 0usize;
+    let mut rest = lower;
+    while let Some(start) = rest.find(open_tag) {
+        let after = &rest[start + open_tag.len()..];
+        let Some(gt) = after.find('>') else { break };
+        let open = &after[..gt];
+        if pred(open) {
+            n += 1;
+        }
+        rest = &after[gt + 1..];
+    }
+    n
 }
 
 pub fn round2(v: f64) -> f64 {
