@@ -18,26 +18,16 @@ pub enum Node {
 
 pub struct ParsedHtml {
     pub root: Node,
-    #[allow(dead_code)]
-    pub errors: Vec<String>,
-    #[allow(dead_code)]
-    pub element_count: usize,
 }
 
 pub fn parse(html: &str) -> ParsedHtml {
     let opts = html5ever::ParseOpts::default();
     let dom: RcDom = parse_document(RcDom::default(), opts).one(html);
 
-    let errors = dom.errors.iter().map(|e| e.to_string()).collect::<Vec<_>>();
-
     let mut counter = 0usize;
     let root = convert(&dom.document, &mut counter);
 
-    ParsedHtml {
-        root,
-        errors,
-        element_count: counter,
-    }
+    ParsedHtml { root }
 }
 
 fn alloc_id(counter: &mut usize) -> usize {

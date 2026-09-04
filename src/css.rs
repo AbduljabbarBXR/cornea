@@ -97,8 +97,6 @@ pub struct Rule {
 #[derive(Debug, Clone, Default)]
 pub struct CssSheet {
     pub rules: Vec<Rule>,
-    #[allow(dead_code)]
-    pub errors: Vec<String>,
 }
 
 impl CssSheet {

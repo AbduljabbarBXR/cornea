@@ -21,6 +21,7 @@ fn main() {
     if let Some(i) = args.iter().position(|a| a == "--serve-http") {
         let addr = args
             .get(i + 1)
+            .filter(|a| a.contains(':'))
             .cloned()
             .unwrap_or_else(|| "127.0.0.1:8080".to_string());
         if let Err(e) = server_http::serve(&addr) {
@@ -83,7 +84,7 @@ fn main() {
 
 fn serve_stdio() {
     let stdin = std::io::stdin();
-    let mut server = McpServer::default();
+    let mut server = McpServer;
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         let line = line.trim();
@@ -99,10 +100,7 @@ fn serve_stdio() {
     }
 }
 
-#[derive(Default)]
-struct McpServer {
-    initialized: bool,
-}
+struct McpServer;
 
 impl McpServer {
     fn handle(&mut self, line: &str) -> Option<String> {
@@ -115,7 +113,6 @@ impl McpServer {
 
         let result = match method {
             "initialize" => {
-                self.initialized = true;
                 json!({
                     "protocolVersion": "2025-03-26",
                     "capabilities": { "tools": {} },
@@ -150,32 +147,26 @@ impl McpServer {
             tool_def(
                 "layout.inspect",
                 "Full deterministic visual model + quality summary of a page.",
-                &["html", "width"],
             ),
             tool_def(
                 "layout.overlaps",
                 "Elements whose boxes collide in viewport space.",
-                &["html", "width"],
             ),
             tool_def(
                 "layout.overflow",
                 "Clipped / collapsed / off-screen elements.",
-                &["html", "width"],
             ),
             tool_def(
                 "layout.contrast",
                 "WCAG AA contrast ratios for text elements.",
-                &["html", "width"],
             ),
             tool_def(
                 "layout.quality",
                 "Combined 0..1 health score with issue list.",
-                &["html", "width"],
             ),
             tool_def(
                 "layout.fidelity",
                 "Which CSS features are exact vs approximated in the engine.",
-                &[],
             ),
         ];
         json!({ "tools": tools })
@@ -217,7 +208,7 @@ impl McpServer {
     }
 }
 
-fn tool_def(name: &str, description: &str, _args: &[&str]) -> serde_json::Value {
+fn tool_def(name: &str, description: &str) -> serde_json::Value {
     let input_schema = json!({
         "type": "object",
         "properties": {
