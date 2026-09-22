@@ -11,6 +11,7 @@ const https = require("https");
 const path = require("path");
 
 const VERSION = require("./package.json").version;
+const BIN_VERSION = process.env.CORNEA_BIN_VERSION || "0.2.2";
 const REPO = "AbduljabbarBXR/cornea";
 const BIN_NAME = "cornea";
 
@@ -84,7 +85,7 @@ async function main() {
   const binDir = path.join(__dirname, "bin");
   fs.mkdirSync(binDir, { recursive: true });
   const dest = path.join(binDir, exeName());
-  const url = `https://github.com/${REPO}/releases/download/v${VERSION}/${asset}`;
+  const url = `https://github.com/${REPO}/releases/download/v${BIN_VERSION}/${asset}`;
   console.log(`cornea: downloading ${asset} ...`);
   await download(url, dest);
   if (process.platform !== "win32") fs.chmodSync(dest, 0o755);
@@ -98,4 +99,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { assetFor, currentKey, exeName, isMusl, VERSION };
+module.exports = { assetFor, currentKey, exeName, isMusl, VERSION, BIN_VERSION };

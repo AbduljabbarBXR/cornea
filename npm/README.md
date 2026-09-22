@@ -1,5 +1,7 @@
 # optrex (Cornea npm installer)
 
+[![npm](https://img.shields.io/npm/v/optrex)](https://www.npmjs.com/package/optrex) [![license](https://img.shields.io/npm/l/optrex)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-compatible-blue)](https://modelcontextprotocol.io) [![Tawakkul Labs](https://img.shields.io/badge/by-Tawakkul%20Labs-0f766e)](https://tawakkul-labs.co.ke)
+
 Installs the prebuilt [Cornea](https://github.com/AbduljabbarBXR/cornea) binary for your platform and exposes the `cornea` command. Cornea is deterministic visual inspection for AI agents: overlap, overflow, contrast and quality as token-cheap geometry instead of pixel dumps. No Chromium.
 
 ```bash
@@ -43,3 +45,7 @@ npm uninstall -g optrex
 ## License
 
 MIT. See [LICENSE](./LICENSE). Binary builds follow the [Cornea repo license](https://github.com/AbduljabbarBXR/cornea).
+
+---
+
+Links: [npm](https://www.npmjs.com/package/optrex) | [GitHub](https://github.com/AbduljabbarBXR/cornea) | [Tawakkul Labs](https://tawakkul-labs.co.ke)

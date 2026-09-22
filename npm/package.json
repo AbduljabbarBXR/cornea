@@ -1,6 +1,6 @@
 {
   "name": "optrex",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Cornea installer. Downloads the prebuilt Cornea binary for your platform and exposes the cornea command. Deterministic visual inspection for AI agents.",
   "bin": {
     "cornea": "bin/cornea.js"
@@ -31,7 +31,7 @@
     "url": "git+https://github.com/AbduljabbarBXR/cornea.git",
     "directory": "npm"
   },
-  "homepage": "https://github.com/AbduljabbarBXR/cornea#readme",
+  "homepage": "https://tawakkul-labs.co.ke",
   "bugs": {
     "url": "https://github.com/AbduljabbarBXR/cornea/issues"
   },
